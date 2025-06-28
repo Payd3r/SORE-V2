@@ -1,0 +1,497 @@
+# SORE-V2 - Shared Oriented Relationship Experience
+## Product Requirements Document
+
+# Overview  
+SORE-V2 è un'applicazione web moderna per condividere e gestire ricordi di coppia in modo immersivo e coinvolgente. L'applicazione permette alle coppie di creare, organizzare e rivivere i propri momenti speciali attraverso foto, video, ricordi, idee e challenge condivise.
+
+Il problema che risolve: Le coppie hanno bisogno di uno spazio privato e personalizzato per archiviare, organizzare e rivivere i propri ricordi insieme, con funzionalità avanzate che vanno oltre i semplici album fotografici.
+
+Target: Coppie che desiderano mantenere viva la propria relazione attraverso la condivisione digitale di ricordi ed esperienze.
+
+Valore unico: Combinazione di gestione ricordi intelligente, IA per classificazione automatica, integrazione musicale, tracking emotivo e design ispirato all'ecosistema Apple.
+
+# Core Features  
+
+## 1. Sistema di Autenticazione
+- **Cosa fa**: Gestione login/registrazione con Google OAuth e credenziali tradizionali
+- **Perché è importante**: Sicurezza e facilità d'accesso, ogni utente appartiene a una sola coppia
+- **Come funziona**: NextAuth.js con provider multipli, creazione/join coppia dopo registrazione
+
+## 2. Gestione Ricordi
+- **Cosa fa**: Creazione, modifica e visualizzazione di ricordi categorizzati (Viaggio, Evento, Semplice, Futuro)
+- **Perché è importante**: Core feature dell'app, permette di organizzare le esperienze di coppia
+- **Come funziona**: CRUD completo con gallerie associate, geolocalizzazione, integrazione meteo e Spotify
+
+## 3. Galleria Intelligente
+- **Cosa fa**: Gestione foto/video con classificazione automatica IA (Persona, Coppia, Paesaggio, Cibo)
+- **Perché è importante**: Organizzazione automatica e ricerca facilitata
+- **Come funziona**: Upload con processing (thumbnails, WebP), deduplicazione, classificazione TensorFlow.js
+
+## 4. Sistema Idee
+- **Cosa fa**: Gestione idee future categorizzate (Ristorante, Viaggio, Semplice)
+- **Perché è importante**: Pianificazione attività di coppia
+- **Come funziona**: CRUD con filtri, stato completamento, assegnazione partner
+
+## 5. Challenge di Coppia
+- **Cosa fa**: Sistema di sfide/obiettivi da completare insieme con progress tracking
+- **Perché è importante**: Gamification della relazione, obiettivi condivisi
+- **Come funziona**: Creazione challenge, tracking progress, rewards system
+
+## 6. Timeline Relazione
+- **Cosa fa**: Visualizzazione cronologica dei ricordi della coppia
+- **Perché è importante**: Storytelling della relazione nel tempo
+- **Come funziona**: Timeline interattiva con milestone, filtri temporali
+
+## 7. Mood Tracker
+- **Cosa fa**: Associazione di emoji/mood ai ricordi con statistiche emotive
+- **Perché è importante**: Insight emotivo sulla relazione
+- **Come funziona**: Selezione mood per ricordo, dashboard analytics
+
+## 8. Integrazione Spotify
+- **Cosa fa**: Associazione brani ai ricordi, playlist di coppia
+- **Perché è importante**: Dimensione musicale dei ricordi
+- **Come funziona**: Spotify Web API, ricerca brani, player integrato
+
+## 9. Sistema Notifiche
+- **Cosa fa**: Notifiche interne per anniversari, upload, nuovi contenuti partner
+- **Perché è importante**: Engagement e coordinazione coppia
+- **Come funziona**: Sistema notifiche interno con persistenza
+
+## 10. PWA Features
+- **Cosa fa**: Funzionalità native mobile, offline storage, camera access
+- **Perché è importante**: Esperienza mobile nativa
+- **Come funziona**: Service Workers, cache strategies, device APIs
+
+# User Experience  
+
+## User Personas
+**Persona Primaria**: "La Coppia Connessa"
+- Età: 20-35 anni
+- Tech-savvy, usa smartphone quotidianamente
+- Valorizza i ricordi e la condivisione digitale
+- Cerca esperienze fluide e intuitive
+
+## Key User Flows
+
+### 1. Onboarding Flow
+1. Accesso welcome page
+2. Login Google/Email o Registrazione
+3. Setup profilo utente
+4. Creazione coppia o join tramite codice
+5. Setup preferenze (tema, notifiche)
+6. Tutorial guidato features principali
+
+### 2. Creazione Ricordo Flow
+1. Tap "Aggiungi Ricordo" da Home
+2. Selezione tipo ricordo (Viaggio/Evento/Semplice/Futuro)
+3. Inserimento title, description, date, location
+4. Upload foto/video (con progress indicator)
+5. Selezione foto copertina
+6. Aggiunta mood e brani Spotify
+7. Save e condivisione automatica con partner
+
+### 3. Esplorazione Galleria Flow
+1. Accesso galleria da menu
+2. Visualizzazione grid intelligente
+3. Filtri tipo immagine, ordinamento
+4. Tap immagine → Detail view
+5. Swipe navigazione, azioni (delete, download, add to memory)
+6. Possibilità condivisione esterna
+
+## UI/UX Considerations
+- **Design Language**: Liquid Glass Apple-inspired
+- **Animations**: Framer Motion per micro-interazioni fluide
+- **Responsive**: Mobile-first con breakpoints tablet/desktop
+- **Accessibility**: WCAG 2.1 compliance, keyboard navigation
+- **Performance**: Lazy loading, image optimization, caching
+- **Dark/Light Mode**: Sistema temi sincronizzato
+- **Touch Gestures**: Swipe, long-press, pinch-to-zoom
+- **Loading States**: Skeleton screens, progress indicators
+
+# Technical Architecture  
+
+## System Components
+```
+┌─────────────────┐    ┌──────────────────┐    ┌────────────────┐
+│   Next.js App   │◄──►│   Fastify API    │◄──►│  PostgreSQL    │
+│  (Frontend)     │    │   (Backend)      │    │  (Database)    │
+└─────────────────┘    └──────────────────┘    └────────────────┘
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────┐    ┌──────────────────┐    ┌────────────────┐
+│   Service       │    │   File System    │    │   Redis        │
+│   Workers       │    │   (Media)        │    │   (Cache)      │
+└─────────────────┘    └──────────────────┘    └────────────────┘
+```
+
+## Data Models
+
+### Users
+```typescript
+{
+  id: string
+  name: string
+  email: string
+  password_hash: string
+  couple_id: string
+  theme_preference: 'light' | 'dark'
+  profile_picture_id: string?
+  created_at: Date
+  updated_at: Date
+}
+```
+
+### Couples
+```typescript
+{
+  id: string
+  name: string
+  anniversary_date: Date
+  invite_code: string
+  created_at: Date
+  updated_at: Date
+}
+```
+
+### Memories
+```typescript
+{
+  id: string
+  title: string
+  description: string
+  category: 'viaggio' | 'evento' | 'semplice' | 'futuro'
+  couple_id: string
+  created_by_user_id: string
+  start_date: Date
+  end_date: Date?
+  location: string?
+  song: string? // Spotify track ID
+  mood: string?
+  weather_data: JSON?
+  cover_image_ids: string[]
+  created_at: Date
+  updated_at: Date
+}
+```
+
+### Images
+```typescript
+{
+  id: string
+  original_path: string
+  jpg_path: string
+  webp_path: string
+  thumb_big_path: string
+  thumb_small_path: string
+  latitude: number?
+  longitude: number?
+  memory_id: string?
+  couple_id: string
+  created_by_user_id: string
+  type: 'persona' | 'coppia' | 'paesaggio' | 'cibo'
+  is_favorite: boolean
+  hash: string // per deduplicazione
+  metadata: JSON // EXIF data
+  created_at: Date
+  updated_at: Date
+}
+```
+
+### Ideas
+```typescript
+{
+  id: string
+  title: string
+  description: string
+  category: 'ristorante' | 'viaggio' | 'challenge' | 'semplice'
+  couple_id: string
+  created_by_user_id: string
+  checked: boolean
+  date_checked: Date?
+  checked_by_user_id: string?
+  created_at: Date
+  updated_at: Date
+}
+```
+
+### Challenges
+```typescript
+{
+  id: string
+  title: string
+  description: string
+  couple_id: string
+  created_by_user_id: string
+  target_value: number
+  current_value: number
+  unit: string
+  is_completed: boolean
+  completed_at: Date?
+  created_at: Date
+  updated_at: Date
+}
+```
+
+### Notifications
+```typescript
+{
+  id: string
+  user_id: string
+  type: 'anniversary' | 'upload_completed' | 'new_memory' | 'idea_completed' | 'new_images'
+  title: string
+  message: string
+  data: JSON?
+  read: boolean
+  created_at: Date
+}
+```
+
+## APIs and Integrations
+- **Spotify Web API**: Ricerca brani, player controls
+- **OpenWeatherMap API**: Dati meteo storici/attuali
+- **Google OAuth**: Autenticazione sociale
+- **TensorFlow.js**: Classificazione immagini client-side
+- **ExifReader**: Estrazione metadati immagini
+- **Sharp**: Processing e ottimizzazione immagini
+
+## Infrastructure Requirements
+- **Container**: Docker + Docker Compose
+- **Database**: PostgreSQL 15 con estensioni PostGIS per geo-data
+- **Caching**: Redis per sessioni e cache API
+- **File Storage**: File system locale con struttura organizzata
+- **Reverse Proxy**: Nginx per SSL e load balancing
+- **Monitoring**: Portainer per gestione containers
+- **Backup**: Script automatici DB dump + media sync
+
+# Development Roadmap  
+
+## Phase 1: Foundation & Auth (MVP Core)
+**Obiettivo**: Sistema funzionante con autenticazione e struttura base
+
+### Deliverables:
+- Setup Docker environment completo
+- Database schema con Prisma
+- Sistema autenticazione NextAuth.js
+- Welcome page con login/register
+- Sistema couples (create/join)
+- Layout base con navigazione
+- Sistema temi light/dark
+- Profilo utente basic
+
+**Risultato**: Utenti possono registrarsi, creare/unirsi a coppia, accedere all'app
+
+## Phase 2: Core Memory Management
+**Obiettivo**: Funzionalità ricordi base con upload immagini
+
+### Deliverables:
+- CRUD memories completo
+- Sistema upload immagini con processing
+- Galleria base con grid view
+- Home dashboard con recent memories
+- Memory detail view basic
+- Sistema categorizzazione ricordi
+- Gestione foto copertina
+
+**Risultato**: Coppia può creare ricordi, uploadare foto, visualizzare galleria
+
+## Phase 3: Advanced Gallery & AI
+**Obiettivo**: Galleria avanzata con features intelligenti
+
+### Deliverables:
+- Classificazione IA immagini (TensorFlow.js)
+- Sistema deduplicazione foto
+- Filtri avanzati galleria
+- Detail view immagini con carosello
+- Sistema favoriti
+- Gestione metadata EXIF
+- Ottimizzazioni performance loading
+
+**Risultato**: Galleria intelligente e performante con classificazione automatica
+
+## Phase 4: Ideas & Planning System
+**Obiettivo**: Sistema gestione idee e pianificazione
+
+### Deliverables:
+- CRUD ideas completo
+- Sistema categorizzazione idee
+- Filtri e ricerca avanzata
+- Challenge system base
+- Progress tracking
+- Integrazione ideas → memories
+
+**Risultato**: Pianificazione attività di coppia e tracking obiettivi
+
+## Phase 5: Enhanced Experience
+**Obiettivo**: Features avanzate per engagement
+
+### Deliverables:
+- Timeline relazione interattiva
+- Mood tracker con analytics
+- Integrazione Spotify completa
+- Weather integration automatica
+- Sistema notifiche interno
+- Statistiche e dashboard insights
+
+**Risultato**: Esperienza ricca con insights emotivi e musicali
+
+## Phase 6: PWA & Mobile Experience
+**Obiettivo**: Esperienza mobile nativa
+
+### Deliverables:
+- PWA completa con Service Workers
+- Camera integration
+- Offline functionality
+- Touch gestures ottimizzati
+- Push notifications
+- Install prompts
+- Performance mobile ottimizzata
+
+**Risultato**: App mobile nativa con funzionalità offline
+
+## Phase 7: Advanced Features & Polish
+**Obiettivo**: Funzionalità avanzate e refinement
+
+### Deliverables:
+- Sistema condivisione esterna
+- Backup/restore automatico
+- Mappa interattiva con clustering
+- Live Photos support
+- Video processing ottimizzato
+- Advanced animations
+- Accessibility improvements
+
+**Risultato**: App completa con tutte le funzionalità avanzate
+
+# Logical Dependency Chain
+
+## Foundation First (Phases 1-2)
+1. **Docker Environment** → Tutto dipende dall'infrastruttura
+2. **Database Schema** → Necessario per tutte le features
+3. **Authentication** → Gate per accesso app
+4. **Basic UI Components** → Riutilizzabili in tutto il progetto
+5. **Memory CRUD** → Core feature che permette testing immediato
+
+## Build Upon Success (Phases 3-4)
+6. **Gallery System** → Dipende da Memory system
+7. **Image Processing** → Necessario per gallery avanzata
+8. **IA Classification** → Enhancement della gallery
+9. **Ideas System** → Indipendente, può essere parallelo
+
+## Enhancement Layer (Phases 5-7)
+10. **Timeline & Analytics** → Richiede dati storici da memories
+11. **Integrations** (Spotify, Weather) → Enhancement features
+12. **PWA Features** → Layer sopra app web funzionante
+13. **Advanced Features** → Polish finale
+
+## Quick Win Strategy
+- **Week 1**: Docker + Auth funzionante
+- **Week 2**: Memory creation + basic gallery  
+- **Week 3**: Photo upload + processing
+- **Week 4**: Ideas system + basic analytics
+
+Ogni fase produce valore incrementale utilizzabile.
+
+# Risks and Mitigations  
+
+## Technical Challenges
+
+### Risk: Performance con grandi volumi di immagini
+**Mitigation**: 
+- Lazy loading intelligente
+- CDN per static assets
+- Compressione WebP automatica
+- Thumbnails progressive
+- Database indexing ottimizzato
+
+### Risk: Classificazione IA inaccurata
+**Mitigation**:
+- Start con TensorFlow.js basic model
+- Manual override sempre disponibile
+- Machine learning iterativo con feedback utente
+- Fallback su classificazione manuale
+
+### Risk: Storage space management
+**Mitigation**:
+- Compressione intelligente senza perdita qualità
+- Cleanup automatico duplicati
+- Monitoring disk usage
+- Backup rotation policy
+
+## MVP Definition Risks
+
+### Risk: Feature creep durante sviluppo
+**Mitigation**:
+- Strict phase boundaries
+- MVP bien definito (Phases 1-2)
+- Feature flags per optional features
+- User feedback loop per prioritizzazione
+
+### Risk: Over-engineering iniziale
+**Mitigation**:
+- Start simple, iterate
+- Avoid premature optimization
+- Focus su core user value
+- Technical debt controllato
+
+## Resource Constraints
+
+### Risk: Integrations API limits
+**Mitigation**:
+- Spotify: Caching intelligente delle ricerche
+- Weather: Rate limiting e fallback
+- Graceful degradation se API non disponibili
+
+### Risk: Development velocity
+**Mitigation**:
+- Component-driven development
+- Comprehensive documentation
+- Automated testing per regression
+- Docker per environment consistency
+
+# Appendix  
+
+## Technical Specifications
+
+### Performance Targets
+- **Page Load**: < 2s first contentful paint
+- **Image Load**: < 1s per thumbnail, < 3s full resolution
+- **API Response**: < 500ms per request
+- **PWA Install**: < 30s complete setup
+
+### Browser Support
+- **Primary**: Chrome 100+, Safari 15+, Firefox 100+
+- **PWA**: iOS Safari 15+, Chrome Android 100+
+- **Fallback**: Graceful degradation per feature non supportate
+
+### Security Requirements
+- **Authentication**: JWT tokens con refresh
+- **File Upload**: Virus scanning, type validation
+- **Data Protection**: Encryption at rest per sensitive data
+- **API Security**: Rate limiting, CORS, input validation
+
+### Monitoring & Analytics
+- **Application**: Error tracking, performance monitoring
+- **Infrastructure**: Container health, resource usage
+- **User Behavior**: Privacy-compliant usage analytics
+- **Business Metrics**: Engagement, retention, feature adoption
+
+## Research Findings
+
+### Competitor Analysis
+- **Google Photos**: Buona IA ma no relationship focus
+- **Apple Photos**: Excellent UX ma ecosystem locked
+- **Couple Apps**: Limited features, poor UX
+- **Opportunity**: Premium UX con relationship-specific features
+
+### Technology Choices Rationale
+- **Next.js**: SSR, performance, developer experience
+- **Fastify**: Performance superiori vs Express
+- **PostgreSQL**: Reliability, JSON support, PostGIS
+- **Prisma**: Type safety, developer productivity
+- **Docker**: Consistent deployment, scalability
+
+### UI/UX Research
+- **Apple HIG**: Gesture patterns, spacing, typography
+- **Liquid Glass**: Glassmorphism, blur effects, depth
+- **Performance**: 60fps animations, optimistic UI
+- **Accessibility**: Color contrast, keyboard nav, screen readers

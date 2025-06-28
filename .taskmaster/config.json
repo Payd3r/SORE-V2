@@ -1,0 +1,34 @@
+{
+  "models": {
+    "main": {
+      "provider": "google",
+      "modelId": "gemini-2.5-flash-preview",
+      "maxTokens": 256000,
+      "temperature": 0.2
+    },
+    "research": {
+      "provider": "openai",
+      "modelId": "gpt-3.5-turbo",
+      "maxTokens": 16000,
+      "temperature": 0.1
+    },
+    "fallback": {
+      "provider": "google",
+      "modelId": "gemini-2.0-flash-lite-preview",
+      "maxTokens": 256000,
+      "temperature": 0.1
+    }
+  },
+  "global": {
+    "logLevel": "info",
+    "debug": false,
+    "defaultSubtasks": 5,
+    "defaultPriority": "medium",
+    "projectName": "Taskmaster",
+    "ollamaBaseURL": "",
+    "bedrockBaseURL": "",
+    "azureOpenaiBaseURL": "",
+    "userId": "free-user",
+    "defaultTag": "master"
+  }
+}

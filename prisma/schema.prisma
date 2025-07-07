@@ -1,0 +1,298 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  password      String? // for email/password authentication
+  googleId      String?   @unique
+  role          String    @default("member") // member, admin
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Spotify integration
+  spotifyAccessToken  String?
+  spotifyRefreshToken String?
+  spotifyTokenExpiry  DateTime?
+
+  // Push notifications
+  pushSubscription String? // JSON string containing push subscription data
+  pushEnabled      Boolean @default(false)
+
+  // Relations
+  accounts            Account[]
+  sessions            Session[]
+  couple              Couple?        @relation(fields: [coupleId], references: [id])
+  coupleId            String?
+  images              Image[]
+  memories            Memory[]
+  ideas               Ideas[]
+  notifications       Notification[]
+  momentsInitiated    Moment[]       @relation("MomentInitiator")
+  momentsParticipated Moment[]       @relation("MomentParticipant")
+
+  @@index([email])
+  @@index([coupleId])
+  @@map("users")
+}
+
+// NextAuth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Couple model for managing couples
+model Couple {
+  id          String    @id @default(cuid())
+  name        String?
+  inviteCode  String    @unique
+  anniversary DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  users         User[]
+  memories      Memory[]
+  ideas         Ideas[]
+  challenges    Challenge[]
+  moments       Moment[]
+  notifications Notification[]
+
+  @@map("couples")
+}
+
+// Memory model for storing memories
+model Memory {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  date         DateTime
+  location     String?
+  latitude     String? // Temporary: stored as text for SQLite compatibility  
+  longitude    String? // Temporary: stored as text for SQLite compatibility
+  category     String?
+  mood         String?
+  weather      Json? // Store weather data as JSON
+  spotifyTrack Json? // Store Spotify track data as JSON
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  author   User     @relation(fields: [authorId], references: [id])
+  authorId String
+  couple   Couple   @relation(fields: [coupleId], references: [id])
+  coupleId String
+  images   Image[]
+  videos   Video[]
+  moments  Moment[]
+  Ideas    Ideas[]
+
+  @@index([coupleId])
+  @@index([date])
+  @@index([location])
+  @@map("memories")
+}
+
+// Image model for storing images and metadata
+model Image {
+  id                  String  @id @default(cuid())
+  filename            String
+  originalName        String
+  path                String
+  thumbnailPath       String?
+  size                Int
+  width               Int?
+  height              Int?
+  latitude            Float?
+  longitude           Float?
+  mimeType            String
+  category            String
+  hash                String  @unique
+  isFavorite          Boolean @default(false)
+  isCombined          Boolean @default(false)
+  isCover             Boolean @default(false)
+  isLivePhoto         Boolean @default(false)
+  metadata            Json?
+  city                String?
+  country             String?
+  thumbnails          Json?
+  createdAt           DateTime @default(now())
+
+  userId   String?
+  user     User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memoryId String?
+  memory   Memory? @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  moment   Moment? @relation(fields: [momentId], references: [id])
+  momentId String?
+  Video    Video?
+
+  @@map("images")
+}
+
+// Video model for storing processed video files and metadata
+model Video {
+  id           String @id @default(cuid())
+  originalPath String
+
+  mp4Path         String?
+  webmPath        String?
+  hlsPlaylistPath String?
+
+  duration Float
+  width    Int
+  height   Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  memory        Memory? @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  memoryId      String?
+  posterImage   Image?  @relation(fields: [posterImageId], references: [id], onDelete: SetNull)
+  posterImageId String? @unique
+
+  @@map("videos")
+}
+
+// Ideas model for managing ideas and planning
+model Ideas {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  category    String?
+  status      String    @default("pending") // pending, in-progress, completed, cancelled
+  priority    String    @default("medium") // low, medium, high
+  dueDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  author   User    @relation(fields: [authorId], references: [id])
+  authorId String
+  couple   Couple  @relation(fields: [coupleId], references: [id])
+  coupleId String
+  memory   Memory? @relation(fields: [memoryId], references: [id])
+  memoryId String?
+
+  @@map("ideas")
+}
+
+// Challenge model for couple challenges
+model Challenge {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  category    String?
+  difficulty  String    @default("medium") // easy, medium, hard
+  status      String    @default("active") // active, completed, paused
+  progress    Int       @default(0) // Percentage 0-100
+  reward      String?
+  startDate   DateTime  @default(now())
+  endDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  couple   Couple @relation(fields: [coupleId], references: [id])
+  coupleId String
+
+  @@map("challenges")
+}
+
+// Notification model for managing notifications
+model Notification {
+  id        String   @id @default(cuid())
+  message   String
+  type      String // anniversary, new_content, moment_invite, etc.
+  isRead    Boolean  @default(false)
+  relatedId String? // ID of the related entity (Memory, Idea, Moment, etc.)
+  deepLink  String? // Deep link to the related content
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   String
+  couple   Couple? @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  coupleId String?
+
+  @@index([userId])
+  @@index([coupleId])
+  @@map("notifications")
+}
+
+// Moment model for special synchronized photos
+model Moment {
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  status          String   @default("pending") // pending, partner1_captured, partner2_captured, completed, failed
+  initiatorId     String
+  initiator       User     @relation("MomentInitiator", fields: [initiatorId], references: [id])
+  participantId   String
+  participant     User     @relation("MomentParticipant", fields: [participantId], references: [id])
+  coupleId        String
+  couple          Couple   @relation(fields: [coupleId], references: [id])
+  memoryId        String?
+  memory          Memory?  @relation(fields: [memoryId], references: [id])
+  images          Image[]
+  completedAt     DateTime?
+  capturedBy      String?
+  tempPhotoPath   String?  // To temporarily store the first partner's photo
+
+  @@index([coupleId])
+  @@index([memoryId])
+  @@map("moments")
+}

@@ -1,0 +1,25 @@
+# Dockerfile per sviluppo SORE-V2 - Next.js Application
+FROM node:18-alpine AS development
+
+# Install dependencies necessarie per sviluppo
+RUN apk add --no-cache libc6-compat ffmpeg
+
+WORKDIR /app
+
+# Copia i file package per installare le dipendenze
+COPY package.json package-lock.json* ./
+
+# Installa tutte le dipendenze (incluse quelle di sviluppo)
+RUN npm ci
+
+# Copia il resto del codice
+COPY . .
+
+# Genera il client Prisma
+RUN npx prisma generate
+
+# Espone la porta per il development server
+EXPOSE 3000
+
+# Comando di default per sviluppo con hot reload
+CMD ["npm", "run", "dev"] 

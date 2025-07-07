@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database per sviluppo
+  postgres-dev:
+    image: postgres:15-alpine
+    container_name: sore-v2-postgres-dev
+    environment:
+      POSTGRES_DB: sore_v2_dev
+      POSTGRES_USER: sore_user
+      POSTGRES_PASSWORD: sore_password_dev
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-dev.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5433:5432"  # Porta diversa per evitare conflitti
+    restart: unless-stopped
+    networks:
+      - sore_dev_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sore_user -d sore_v2_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis per sviluppo
+  redis-dev:
+    image: redis:7-alpine
+    container_name: sore-v2-redis-dev
+    ports:
+      - "6380:6379"  # Porta diversa per evitare conflitti
+    volumes:
+      - redis_dev_data:/data
+    restart: unless-stopped
+    networks:
+      - sore_dev_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Next.js App per sviluppo (hot reload)
+  app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: sore-v2-app-dev
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://sore_user:sore_password_dev@postgres-dev:5432/sore_v2_dev
+      - NEXTAUTH_URL=http://localhost:3001
+      - NEXTAUTH_SECRET=dev-nextauth-secret-key
+      - REDIS_URL=redis://redis-dev:6379
+      - CHOKIDAR_USEPOLLING=true  # Per il hot reload
+    ports:
+      - "3001:3000"  # Porta diversa per sviluppo
+    depends_on:
+      postgres-dev:
+        condition: service_healthy
+      redis-dev:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - sore_dev_network
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+      - uploads_dev:/app/uploads
+    command: npm run dev
+
+  # WebSocket Server for development
+  ws-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: sore-v2-ws-server-dev
+    ports:
+      - "3002:3002"
+    depends_on:
+      - postgres-dev
+    restart: unless-stopped
+    networks:
+      - sore_dev_network
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/server/dist
+    command: npm run dev:ws
+
+  # Adminer per gestione database (solo sviluppo)
+  adminer:
+    image: adminer:latest
+    container_name: sore-v2-adminer
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres-dev
+    depends_on:
+      - postgres-dev
+    networks:
+      - sore_dev_network
+    restart: unless-stopped
+
+  # Portainer per la gestione dei container (solo sviluppo)
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: sore-v2-portainer
+    command: -H unix:///var/run/docker.sock
+    ports:
+      - "9000:9000"
+      - "9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    restart: unless-stopped
+    networks:
+      - sore_dev_network
+
+  # File Browser per la gestione dei file (solo sviluppo)
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    container_name: sore-v2-filebrowser
+    ports:
+      - "8081:80"
+    volumes:
+      - .:/srv
+      - filebrowser_data:/database
+    user: "0:0" # root user
+    restart: unless-stopped
+    networks:
+      - sore_dev_network
+
+volumes:
+  postgres_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+  uploads_dev:
+    driver: local
+  portainer_data:
+    driver: local
+  filebrowser_data:
+    driver: local
+
+networks:
+  sore_dev_network:
+    driver: bridge 

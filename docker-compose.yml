@@ -1,0 +1,167 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: sore-v2-postgres
+    environment:
+      POSTGRES_DB: sore_v2
+      POSTGRES_USER: sore_user
+      POSTGRES_PASSWORD: sore_password_2024
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - sore_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sore_user -d sore_v2"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    container_name: sore-v2-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - sore_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Next.js Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sore-v2-app
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://sore_user:sore_password_2024@postgres:5432/sore_v2
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=your-nextauth-secret-key-here
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - sore_network
+    volumes:
+      - uploads:/app/uploads
+      - ./public:/app/public
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Reverse Proxy (Optional - for production)
+  nginx:
+    image: nginx:alpine
+    container_name: sore-v2-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/ssl:/etc/nginx/ssl:ro
+      - uploads:/var/www/uploads:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - sore_network
+    profiles:
+      - production
+
+  # Portainer for container management (optional production tool)
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: sore-v2-portainer-prod
+    command: -H unix:///var/run/docker.sock
+    ports:
+      - "9001:9000"
+      - "9444:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_prod_data:/data
+    restart: unless-stopped
+    networks:
+      - sore_network
+    profiles:
+      - production-tools
+
+  # File Browser for file management (optional production tool)
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    container_name: sore-v2-filebrowser-prod
+    ports:
+      - "8082:80"
+    volumes:
+      - .:/srv
+      - filebrowser_prod_data:/database
+    user: "0:0" # root user
+    restart: unless-stopped
+    networks:
+      - sore_network
+    profiles:
+      - production-tools
+
+  # Backup service for PostgreSQL
+  backup:
+    image: postgres:15-alpine
+    container_name: sore-v2-postgres-backup
+    volumes:
+      - postgres_data:/source_data:ro
+      - backups:/backups
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=sore_user
+      - POSTGRES_PASSWORD=sore_password_2024
+      - POSTGRES_DB=sore_v2
+    entrypoint: |
+      sh -c "apk add --no-cache cron && \
+             echo '0 2 * * * pg_dump -h $$POSTGRES_HOST -U $$POSTGRES_USER -d $$POSTGRES_DB | gzip > /backups/dump_$$(date +%Y-%m-%d_%H-%M-%S).sql.gz' > /etc/crontabs/root && \
+             crond -f -L /dev/stdout"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - sore_network
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  uploads:
+    driver: local
+  backups:
+    driver: local
+  portainer_prod_data:
+    driver: local
+  filebrowser_prod_data:
+    driver: local
+
+networks:
+  sore_network:
+    driver: bridge 

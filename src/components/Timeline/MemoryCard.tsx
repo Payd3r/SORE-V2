@@ -31,6 +31,7 @@ interface MemoryCardProps {
   onView?: (id: string) => void;
   onShare?: (id: string) => void;
   onMore?: (id: string) => void;
+  onMomentSelect?: (moment: TimelineMemory['moments'][0]) => void;
 }
 
 export function MemoryCard({
@@ -42,12 +43,15 @@ export function MemoryCard({
   onView,
   onShare,
   onMore,
+  onMomentSelect,
 }: MemoryCardProps) {
 
   const handleActionClick = (e: React.MouseEvent, action?: (id: string) => void) => {
     e.stopPropagation();
     action?.(memory.id);
   }
+
+  const hasLivePhotoMoment = memory.moments?.some(m => m.images.some(i => i.isLivePhoto));
 
   const ImagePreview = () => {
     if (!memory.images || memory.images.length === 0) return null;
@@ -128,10 +132,22 @@ export function MemoryCard({
                 </div>
             )}
             {memory.moments && memory.moments.length > 0 && (
-                <div className="flex items-center gap-1.5 text-xs text-white/70">
+                <button 
+                  className={cn(
+                    "flex items-center gap-1.5 text-xs text-white/70 transition-colors",
+                    hasLivePhotoMoment ? "text-cyan-400 hover:text-cyan-300" : "hover:text-white"
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if(memory.moments && memory.moments[0]) {
+                      onMomentSelect?.(memory.moments[0]);
+                    }
+                  }}
+                  title={hasLivePhotoMoment ? "Visualizza Live Photo" : "Visualizza Momento"}
+                >
                     <Camera className="w-4 h-4" />
                     <span>{memory.moments.length}</span>
-                </div>
+                </button>
             )}
             {memory.ideas && memory.ideas.length > 0 && (
                  <div className="flex items-center gap-1.5 text-xs text-white/70">

@@ -131,7 +131,20 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             status: true,
-            combinedImagePath: true,
+            combinedImage: true,
+            images: {
+              select: {
+                id: true,
+                path: true,
+                isLivePhoto: true,
+                Video: {
+                  select: {
+                    id: true,
+                    mp4Path: true,
+                  }
+                }
+              }
+            }
           },
         } : false,
 

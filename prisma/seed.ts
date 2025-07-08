@@ -125,27 +125,19 @@ async function main() {
   // Creazione Notifications di test
   const notification1 = await prisma.notification.create({
     data: {
-      title: 'Nuovo ricordo aggiunto',
       message: `${user2.name} ha aggiunto un nuovo ricordo: "${memory2.title}"`,
       type: 'memory',
-      metadata: {
-        memoryId: memory2.id,
-        authorName: user2.name,
-      },
       userId: user1.id,
+      coupleId: testCouple.id,
     },
   })
 
   const notification2 = await prisma.notification.create({
     data: {
-      title: 'Anniversario in arrivo',
       message: 'Il vostro anniversario è tra una settimana!',
       type: 'anniversary',
-      metadata: {
-        date: testCouple.anniversary,
-        daysLeft: 7,
-      },
       userId: user1.id,
+      coupleId: testCouple.id,
     },
   })
   console.log('✅ Notifiche di test create')
@@ -153,8 +145,7 @@ async function main() {
   // Creazione Moment di test
   const moment1 = await prisma.moment.create({
     data: {
-      status: 'completed',
-      completedAt: new Date('2023-12-25'),
+      status: 'COMPLETED',
       combinedImagePath: '/uploads/moments/christmas-2023.jpg',
       initiatorId: user1.id,
       participantId: user2.id,

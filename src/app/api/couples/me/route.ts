@@ -44,71 +44,45 @@ import { z } from 'zod'
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-export async function GET() {
-  try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Devi essere autenticato' },
-        { status: 401 }
-      )
-    }
+export async function GET(req: Request) {
+  const session = await getServerSession(authOptions)
 
-    // Trova l'utente con la sua coppia
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
+  if (!session?.user?.id) {
+    return new NextResponse('Unauthorized', { status: 401 })
+  }
+
+  if (!session.user.coupleId) {
+    return NextResponse.json({ hasCouple: false, couple: null });
+  }
+
+  try {
+    const couple = await prisma.couple.findUnique({
+      where: {
+        id: session.user.coupleId,
+      },
       include: {
-        couple: {
-          include: {
-            users: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                image: true,
-              }
-            }
+        users: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
           }
         }
-      }
+      },
     })
 
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Utente non trovato' },
-        { status: 404 }
-      )
+    if (!couple) {
+      // Questo caso indica un'incoerenza dei dati, l'utente ha un coupleId ma la coppia non esiste
+      return new NextResponse('Couple not found despite user having a coupleId', { status: 404 })
     }
 
-    // Se l'utente non è in una coppia
-    if (!user.couple) {
-      return NextResponse.json({
-        hasCouple: false,
-        couple: null,
-      })
-    }
-
-    // Restituisce le informazioni della coppia
-    return NextResponse.json({
-      hasCouple: true,
-      couple: {
-        id: user.couple.id,
-        name: user.couple.name,
-        inviteCode: user.couple.inviteCode,
-        anniversary: user.couple.anniversary,
-        users: user.couple.users,
-        isComplete: user.couple.users.length >= 2,
-      }
-    })
-
-  } catch (error) {
-    console.error('Errore nel recupero della coppia:', error)
+    const isComplete = couple.users.length === 2;
+    return NextResponse.json({ hasCouple: true, couple: { ...couple, isComplete } })
     
-    return NextResponse.json(
-      { error: 'Errore interno del server' },
-      { status: 500 }
-    )
+  } catch (error) {
+    console.error('Error fetching couple data:', error)
+    return new NextResponse('Internal Server Error', { status: 500 })
   }
 }
 

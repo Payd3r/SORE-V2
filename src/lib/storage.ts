@@ -1,6 +1,7 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { writeFile, mkdir, unlink, readFile } from 'fs/promises';
 import path from 'path';
+import fs from 'fs/promises';
 
 export enum StorageProvider {
   LOCAL = 'local',
@@ -136,4 +137,37 @@ function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
         stream.on('error', reject);
         stream.on('end', () => resolve(Buffer.concat(chunks)));
     });
+}
+
+/**
+ * Scansiona ricorsivamente una directory e carica tutti i file nello storage.
+ * @param localDirectoryPath - Il percorso assoluto della directory locale da caricare.
+ * @param storageDirectoryPath - Il percorso della directory di destinazione nello storage.
+ */
+export async function saveDirectory(localDirectoryPath: string, storageDirectoryPath: string): Promise<void> {
+  const files = await fs.readdir(localDirectoryPath, { withFileTypes: true });
+  for (const file of files) {
+    const localPath = path.join(localDirectoryPath, file.name);
+    const storagePath = path.join(storageDirectoryPath, file.name).replace(/\\/g, '/');
+    if (file.isDirectory()) {
+      await saveDirectory(localPath, storagePath);
+    } else {
+      const buffer = await fs.readFile(localPath);
+      // Estrai il mimetype o usa un default
+      const mimetype = getMimeType(file.name);
+      await saveFile(storagePath, buffer, mimetype);
+    }
+  }
+}
+
+function getMimeType(filename: string): string {
+    const ext = path.extname(filename).toLowerCase();
+    switch (ext) {
+        case '.m3u8': return 'application/vnd.apple.mpegurl';
+        case '.ts': return 'video/mp2t';
+        case '.jpg':
+        case '.jpeg': return 'image/jpeg';
+        case '.png': return 'image/png';
+        default: return 'application/octet-stream';
+    }
 } 

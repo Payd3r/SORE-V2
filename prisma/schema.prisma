@@ -38,14 +38,16 @@ model User {
   // Relations
   accounts            Account[]
   sessions            Session[]
-  couple              Couple?        @relation(fields: [coupleId], references: [id])
+  couple              Couple?          @relation(fields: [coupleId], references: [id])
   coupleId            String?
   images              Image[]
   memories            Memory[]
   ideas               Ideas[]
   notifications       Notification[]
-  momentsInitiated    Moment[]       @relation("MomentInitiator")
-  momentsParticipated Moment[]       @relation("MomentParticipant")
+  momentsInitiated    Moment[]         @relation("MomentInitiator")
+  momentsParticipated Moment[]         @relation("MomentParticipant")
+  analyticsEvents     AnalyticsEvent[]
+  sharedLinks         SharedLink[]
 
   @@index([email])
   @@index([coupleId])
@@ -101,14 +103,36 @@ model Couple {
   updatedAt   DateTime  @updatedAt
 
   // Relations
-  users         User[]
-  memories      Memory[]
-  ideas         Ideas[]
-  challenges    Challenge[]
-  moments       Moment[]
-  notifications Notification[]
+  users           User[]
+  memories        Memory[]
+  ideas           Ideas[]
+  challenges      Challenge[]
+  moments         Moment[]
+  notifications   Notification[]
+  analyticsEvents AnalyticsEvent[]
+  countdowns      Countdown[]
+  journeys        Journey[]
+
+  // Couple settings
+  settings Json?
+  Image    Image[]
 
   @@map("couples")
+}
+
+// Countdown model for future events and anniversaries
+model Countdown {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  date        DateTime // The date of the event
+  coupleId    String
+  couple      Couple   @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([coupleId])
+  @@map("countdowns")
 }
 
 // Memory model for storing memories
@@ -128,14 +152,16 @@ model Memory {
   updatedAt    DateTime @updatedAt
 
   // Relations
-  author   User     @relation(fields: [authorId], references: [id])
-  authorId String
-  couple   Couple   @relation(fields: [coupleId], references: [id])
-  coupleId String
-  images   Image[]
-  videos   Video[]
-  moments  Moment[]
-  Ideas    Ideas[]
+  author      User            @relation(fields: [authorId], references: [id])
+  authorId    String
+  couple      Couple          @relation(fields: [coupleId], references: [id])
+  coupleId    String
+  images      Image[]
+  videos      Video[]
+  moments     Moment[]
+  Ideas       Ideas[]
+  journeys    JourneyMemory[]
+  sharedLinks SharedLink[]
 
   @@index([coupleId])
   @@index([date])
@@ -143,77 +169,104 @@ model Memory {
   @@map("memories")
 }
 
-// Image model for storing images and metadata
-model Image {
-  id                  String  @id @default(cuid())
-  filename            String
-  originalName        String
-  path                String
-  thumbnailPath       String?
-  size                Int
-  width               Int?
-  height              Int?
-  latitude            Float?
-  longitude           Float?
-  mimeType            String
-  category            String
-  hash                String  @unique
-  isFavorite          Boolean @default(false)
-  isCombined          Boolean @default(false)
-  isCover             Boolean @default(false)
-  isLivePhoto         Boolean @default(false)
-  metadata            Json?
-  city                String?
-  country             String?
-  thumbnails          Json?
-  createdAt           DateTime @default(now())
-
-  userId   String?
-  user     User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  memoryId String?
-  memory   Memory? @relation(fields: [memoryId], references: [id], onDelete: Cascade)
-  moment   Moment? @relation(fields: [momentId], references: [id])
-  momentId String?
-  Video    Video?
-
-  @@map("images")
-}
-
-// Video model for storing processed video files and metadata
-model Video {
-  id           String @id @default(cuid())
-  originalPath String
-
-  mp4Path         String?
-  webmPath        String?
-  hlsPlaylistPath String?
-
-  duration Float
-  width    Int
-  height   Int
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// Journey model to group memories into a travel route
+model Journey {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  startDate   DateTime
+  endDate     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
-  memory        Memory? @relation(fields: [memoryId], references: [id], onDelete: Cascade)
-  memoryId      String?
-  posterImage   Image?  @relation(fields: [posterImageId], references: [id], onDelete: SetNull)
-  posterImageId String? @unique
+  couple   Couple          @relation(fields: [coupleId], references: [id])
+  coupleId String
+  memories JourneyMemory[]
 
-  @@map("videos")
+  @@index([coupleId])
+  @@map("journeys")
 }
 
-// Ideas model for managing ideas and planning
+// Explicit many-to-many relation table between Journey and Memory
+model JourneyMemory {
+  journey   Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  journeyId String
+  memory    Memory  @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  memoryId  String
+  order     Int // To maintain the order of memories in a journey
+
+  @@id([journeyId, memoryId])
+  @@map("journey_memories")
+}
+
+// Model for creating shareable links for memories
+model SharedLink {
+  id        String    @id @default(cuid())
+  token     String    @unique // The unique token for the shareable URL
+  memoryId  String
+  memory    Memory    @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  password  String? // Hashed password for protection
+  expiresAt DateTime? // Optional expiration date for the link
+  createdAt DateTime  @default(now())
+
+  @@index([token])
+  @@index([memoryId])
+  @@map("shared_links")
+}
+
+// Image model for storing images and metadata
+model Image {
+  id                 String   @id @default(cuid())
+  userId             String
+  coupleId           String
+  filename           String
+  originalName       String
+  path               String
+  thumbnailPath      String
+  category           String?
+  size               Int
+  width              Int
+  height             Int
+  createdAt          DateTime @default(now())
+  livePhotoPath      String?
+  livePhotoContentId String?  @unique
+  momentId           String?
+  memoryId           String?
+  isCover            Boolean  @default(false)
+  isFavorite         Boolean  @default(false)
+
+  moment Moment? @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  memory Memory? @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  author User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  couple Couple  @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+}
+
+model Video {
+  id                 String   @id @default(cuid())
+  filename           String
+  path               String
+  size               Int
+  duration           Int
+  width              Int
+  height             Int
+  livePhotoContentId String?  @unique
+  createdAt          DateTime @default(now())
+  memoryId           String?
+  memory             Memory?  @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+}
+
+// Ideas model for storing future plans
 model Ideas {
   id          String    @id @default(cuid())
   title       String
   description String?
   category    String?
-  status      String    @default("pending") // pending, in-progress, completed, cancelled
+  status      String    @default("pending") // pending, completed, discarded
   priority    String    @default("medium") // low, medium, high
   dueDate     DateTime?
-  completedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -225,24 +278,21 @@ model Ideas {
   memory   Memory? @relation(fields: [memoryId], references: [id])
   memoryId String?
 
+  @@index([coupleId])
+  @@index([status])
   @@map("ideas")
 }
 
-// Challenge model for couple challenges
+// Challenge model for gamification
 model Challenge {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   title       String
-  description String?
-  category    String?
-  difficulty  String    @default("medium") // easy, medium, hard
-  status      String    @default("active") // active, completed, paused
-  progress    Int       @default(0) // Percentage 0-100
-  reward      String?
-  startDate   DateTime  @default(now())
-  endDate     DateTime?
-  completedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  description String
+  category    String
+  points      Int
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
   couple   Couple @relation(fields: [coupleId], references: [id])
@@ -251,48 +301,79 @@ model Challenge {
   @@map("challenges")
 }
 
-// Notification model for managing notifications
+// Notification model for user alerts
 model Notification {
   id        String   @id @default(cuid())
+  type      String // e.g., 'new_memory', 'new_moment', 'challenge_completed'
   message   String
-  type      String // anniversary, new_content, moment_invite, etc.
-  isRead    Boolean  @default(false)
-  relatedId String? // ID of the related entity (Memory, Idea, Moment, etc.)
-  deepLink  String? // Deep link to the related content
+  read      Boolean  @default(false)
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
   // Relations
-  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id])
   userId   String
-  couple   Couple? @relation(fields: [coupleId], references: [id], onDelete: Cascade)
-  coupleId String?
+  couple   Couple @relation(fields: [coupleId], references: [id])
+  coupleId String
+
+  // Optional link to a specific resource
+  link String?
 
   @@index([userId])
-  @@index([coupleId])
   @@map("notifications")
 }
 
-// Moment model for special synchronized photos
+// Moment model for real-time photo sharing
 model Moment {
-  id              String   @id @default(cuid())
-  title           String
-  description     String?
-  status          String   @default("pending") // pending, partner1_captured, partner2_captured, completed, failed
-  initiatorId     String
-  initiator       User     @relation("MomentInitiator", fields: [initiatorId], references: [id])
-  participantId   String
-  participant     User     @relation("MomentParticipant", fields: [participantId], references: [id])
-  coupleId        String
-  couple          Couple   @relation(fields: [coupleId], references: [id])
-  memoryId        String?
-  memory          Memory?  @relation(fields: [memoryId], references: [id])
-  images          Image[]
-  completedAt     DateTime?
-  capturedBy      String?
-  tempPhotoPath   String?  // To temporarily store the first partner's photo
+  id                 String       @id @default(cuid())
+  initiatorId        String
+  initiator          User         @relation("MomentInitiator", fields: [initiatorId], references: [id])
+  participantId      String?
+  participant        User?        @relation("MomentParticipant", fields: [participantId], references: [id])
+  coupleId           String
+  couple             Couple       @relation(fields: [coupleId], references: [id])
+  status             MomentStatus @default(PENDING)
+  expiresAt          DateTime
+  initiatorImageId   String?
+  participantImageId String?
+  combinedImageId    String?
+  memoryId           String?      @unique
+  memory             Memory?      @relation(fields: [memoryId], references: [id])
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  images             Image[]
 
-  @@index([coupleId])
-  @@index([memoryId])
+  @@index([coupleId, status])
   @@map("moments")
+}
+
+enum MomentStatus {
+  PENDING
+  ACCEPTED
+  UPLOADING
+  COMPLETED
+  EXPIRED
+  DECLINED
+}
+
+// Analytics model
+model AnalyticsEvent {
+  id        String   @id @default(cuid())
+  type      String // e.g., 'login', 'memory_create', 'image_upload'
+  details   Json?
+  timestamp DateTime @default(now())
+
+  // Relations
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+  coupleId String
+  couple   Couple @relation(fields: [coupleId], references: [id])
+
+  @@index([type])
+  @@index([timestamp])
+  @@map("analytics_events")
+}
+
+enum Role {
+  MEMBER
+  ADMIN
 }

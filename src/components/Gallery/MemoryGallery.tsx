@@ -139,7 +139,11 @@ const MemoryGallery: React.FC<MemoryGalleryProps> = ({ memoryId, images }) => {
 
     try {
         const response = await fetch(`/api/images/${imageId}/favorite`, {
-            method: 'POST',
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ isFavorite: !originalFavorites.has(imageId) }),
         });
 
         if (!response.ok) {

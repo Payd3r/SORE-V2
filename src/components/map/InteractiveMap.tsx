@@ -4,8 +4,9 @@ import { MapContainer, TileLayer, Marker, Tooltip, Polyline, useMap } from 'reac
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
-import MarkerClusterGroup from 'react-leaflet-markercluster';
-import HeatmapLayer from 'react-leaflet-heatmap-layer-v3';
+// import MarkerClusterGroup from 'react-leaflet-markercluster';
+import MarkerClusterGroup from 'react-leaflet-cluster';
+// import HeatmapLayer from 'react-leaflet-heatmap-layer-v3';
 import { moods } from '@/lib/mood-system';
 
 import L from 'leaflet';
@@ -46,7 +47,7 @@ export default function InteractiveMap() {
     const [selectedCountry, setSelectedCountry] = useState<string>('');
     const [selectedCity, setSelectedCity] = useState<string>('');
     const [moodData, setMoodData] = useState<MoodMapData[]>([]);
-    const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
+    // const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
     const [travelRoute, setTravelRoute] = useState<[number, number][]>([]);
     const [showTravelRoute, setShowTravelRoute] = useState<boolean>(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -153,9 +154,9 @@ export default function InteractiveMap() {
                     <option value="">All Cities</option>
                     {cities.map(city => <option key={city} value={city}>{city}</option>)}
                 </select>
-                <button onClick={() => setShowHeatmap(!showHeatmap)}>
+                {/* <button onClick={() => setShowHeatmap(!showHeatmap)}>
                     {showHeatmap ? 'Hide' : 'Show'} Emotional Heatmap
-                </button>
+                </button> */}
                 <button onClick={() => setShowTravelRoute(!showTravelRoute)}>
                     {showTravelRoute ? 'Hide' : 'Show'} Travel Route
                 </button>
@@ -178,7 +179,7 @@ export default function InteractiveMap() {
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-                {showHeatmap && heatmapPoints.length > 0 && (
+                {/* {showHeatmap && heatmapPoints.length > 0 && (
                     <HeatmapLayer
                         points={heatmapPoints}
                         longitudeExtractor={(p: [number, number, number]) => p[1]}
@@ -188,7 +189,7 @@ export default function InteractiveMap() {
                         blur={15}
                         max={5}
                     />
-                )}
+                )} */}
                 {showTravelRoute && travelRoute.length > 1 && (
                     <Polyline positions={travelRoute} color="blue" />
                 )}

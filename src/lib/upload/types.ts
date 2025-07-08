@@ -12,4 +12,5 @@ export interface ProcessedFile {
     url?: string;
     reason?: string;
     originalFilename: string;
+    livePhotoContentId?: string | null;
 } 

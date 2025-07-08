@@ -6,7 +6,7 @@ import { z } from 'zod'
 
 // Schema di validazione per unirsi a una coppia
 const joinCoupleSchema = z.object({
-  inviteCode: z.string().trim().min(1, 'Il codice di invito è obbligatorio'),
+  inviteCode: z.string().min(1, 'Il codice di invito è richiesto'),
 })
 
 /**
@@ -61,106 +61,50 @@ const joinCoupleSchema = z.object({
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-export async function POST(request: NextRequest) {
+export async function POST(req: Request) {
+  const session = await getServerSession(authOptions)
+
+  if (!session?.user?.id) {
+    return new NextResponse('Unauthorized', { status: 401 })
+  }
+
+  if (session.user.coupleId) {
+    return new NextResponse('User is already in a couple', { status: 400 })
+  }
+
   try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Devi essere autenticato per unirti a una coppia' },
-        { status: 401 }
-      )
-    }
-
-    // Verifica che l'utente non sia già in una coppia
-    const existingUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      include: { couple: true }
-    })
-
-    if (existingUser?.couple) {
-      return NextResponse.json(
-        { error: 'Sei già parte di una coppia' },
-        { status: 400 }
-      )
-    }
-
-    const body = await request.json()
+    const body = await req.json()
     const validatedData = joinCoupleSchema.parse(body)
 
-    // Trova la coppia con il codice di invito
-    const couple = await prisma.couple.findUnique({
+    const coupleToJoin = await prisma.couple.findUnique({
       where: { inviteCode: validatedData.inviteCode },
-      include: { 
-        users: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          }
-        }
-      }
+      include: { users: true }
     })
 
-    if (!couple) {
-      return NextResponse.json(
-        { error: 'Codice di invito non valido' },
-        { status: 404 }
-      )
+    if (!coupleToJoin) {
+      return new NextResponse('Invalid invite code', { status: 404 })
     }
 
-    // Verifica che la coppia non sia già completa (max 2 utenti)
-    if (couple.users.length >= 2) {
-      return NextResponse.json(
-        { error: 'Questa coppia è già completa' },
-        { status: 400 }
-      )
+    if (coupleToJoin.users.length >= 2) {
+        return new NextResponse('This couple is already full', { status: 400 })
     }
 
-    // Associa l'utente alla coppia
     await prisma.user.update({
       where: { id: session.user.id },
-      data: { coupleId: couple.id }
+      data: { coupleId: coupleToJoin.id },
     })
-
-    // Recupera la coppia aggiornata con i membri
-    const updatedCouple = await prisma.couple.findUnique({
-      where: { id: couple.id },
-      include: {
-        users: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          }
-        }
-      }
-    })
-
-    return NextResponse.json({
-      success: true,
-      couple: {
-        id: updatedCouple!.id,
-        name: updatedCouple!.name,
-        inviteCode: updatedCouple!.inviteCode,
-        anniversary: updatedCouple!.anniversary,
-        users: updatedCouple!.users,
-      }
-    })
-
-  } catch (error) {
-    console.error('Errore nell\'unirsi alla coppia:', error)
     
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: error.errors },
-        { status: 400 }
-      )
-    }
+    const updatedCouple = await prisma.couple.findUnique({
+        where: { id: coupleToJoin.id },
+        include: { users: true }
+    })
 
-    return NextResponse.json(
-      { error: 'Errore interno del server' },
-      { status: 500 }
-    )
+    return NextResponse.json({ couple: updatedCouple })
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return new NextResponse(JSON.stringify(error.issues), { status: 422 })
+    }
+    console.error('Error joining couple:', error)
+    return new NextResponse('Internal Server Error', { status: 500 })
   }
 } 

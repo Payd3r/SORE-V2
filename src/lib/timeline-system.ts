@@ -20,11 +20,7 @@ export interface TimelineMemory {
     filename: string;
     thumbnailPath?: string;
   }>;
-  moments?: Array<{
-    id: string;
-    status: string;
-    combinedImagePath?: string;
-  }>;
+  moments?: TimelineMoment[];
   ideas?: Array<{
     id: string;
     title: string;
@@ -493,4 +489,21 @@ export default {
   searchTimelineMemories,
   calculateTimelineStats,
   generateTimeline,
-}; 
+};
+
+export interface TimelineMomentImage {
+  id: string;
+  path: string;
+  isLivePhoto: boolean;
+  Video?: {
+    id: string;
+    mp4Path?: string;
+  } | null;
+}
+
+export interface TimelineMoment {
+  id: string;
+  status: string;
+  combinedImage?: string | null;
+  images: TimelineMomentImage[];
+} 

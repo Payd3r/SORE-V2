@@ -3,12 +3,14 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Clock, Upload, User, Map } from 'lucide-react';
+import { Home, Clock, Upload, User, Map, CalendarClock, Plane } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
     { href: '/', label: 'Home', icon: Home },
     { href: '/timeline', label: 'Timeline', icon: Clock },
+    { href: '/countdowns', label: 'Countdowns', icon: CalendarClock },
+    { href: '/journeys', label: 'Journeys', icon: Plane },
     { href: '/upload', label: 'Upload', icon: Upload },
     { href: '/map', label: 'Map', icon: Map },
     { href: '/profile', label: 'Profile', icon: User },

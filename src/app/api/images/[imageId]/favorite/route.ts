@@ -1,54 +1,42 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
-export async function POST(
-  request: Request,
+export async function PUT(
+  req: NextRequest,
   { params }: { params: { imageId: string } }
 ) {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.coupleId) {
+  if (!session?.user?.id || !session.user.coupleId) {
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
   const { imageId } = params;
+  const { isFavorite } = await req.json();
 
-  try {
-    // First, verify the image exists and belongs to the user's couple
-    const imageToToggle = await prisma.image.findFirst({
-      where: {
-        id: imageId,
-        memory: {
-          coupleId: session.user.coupleId,
-        },
-      },
-      select: {
-        isFavorite: true,
-      },
-    });
-
-    if (!imageToToggle) {
-      return new NextResponse('Not Found or Forbidden', { status: 404 });
-    }
-
-    // Toggle the isFavorite status
-    const updatedImage = await prisma.image.update({
-      where: {
-        id: imageId,
-      },
-      data: {
-        isFavorite: !imageToToggle.isFavorite,
-      },
-      select: {
-        id: true,
-        isFavorite: true,
-      }
-    });
-
-    return NextResponse.json(updatedImage, { status: 200 });
-  } catch (error) {
-    console.error('Error toggling favorite status:', error);
-    return new NextResponse('Internal Server Error', { status: 500 });
+  if (typeof isFavorite !== 'boolean') {
+    return new NextResponse('Invalid input', { status: 400 });
   }
+
+  // Verifica che l'immagine appartenga alla coppia dell'utente
+  const image = await prisma.image.findFirst({
+    where: {
+      id: imageId,
+      coupleId: session.user.coupleId,
+    },
+  });
+
+  if (!image) {
+    return new NextResponse('Image not found or access denied', {
+      status: 404,
+    });
+  }
+
+  const updatedImage = await prisma.image.update({
+    where: { id: imageId },
+    data: { isFavorite },
+  });
+
+  return NextResponse.json(updatedImage);
 } 

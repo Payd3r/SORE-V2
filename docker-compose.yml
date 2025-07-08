@@ -91,6 +91,42 @@ services:
     profiles:
       - production
 
+  # Cron jobs for automated backups
+  cron-jobs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sore-v2-cron-jobs
+    command: |
+      sh -c "
+        apk add --no-cache cron && \
+        echo '0 3 * * *   cd /app && npm run backup:db >> /var/log/cron.log 2>&1' > /etc/crontabs/root && \
+        echo '5 3 * * *   cd /app && npm run backup:media >> /var/log/cron.log 2>&1' >> /etc/crontabs/root && \
+        echo '0 9 * * *   cd /app && npm run notify:countdowns >> /var/log/cron.log 2>&1' >> /etc/crontabs/root && \
+        touch /var/log/cron.log && \
+        crond -f -L /var/log/cron.log
+      "
+    volumes:
+      - .:/app
+      - backups:/app/backups
+      - uploads:/app/public/uploads
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://sore_user:sore_password_2024@postgres:5432/sore_v2
+      - DATABASE_NAME=sore_v2
+      - DATABASE_USER=sore_user
+      - DATABASE_PASSWORD=sore_password_2024
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+    depends_on:
+      - postgres
+      - app
+    restart: unless-stopped
+    networks:
+      - sore_network
+    profiles:
+      - production
+
   # Portainer for container management (optional production tool)
   portainer:
     image: portainer/portainer-ce:latest
@@ -123,30 +159,6 @@ services:
       - sore_network
     profiles:
       - production-tools
-
-  # Backup service for PostgreSQL
-  backup:
-    image: postgres:15-alpine
-    container_name: sore-v2-postgres-backup
-    volumes:
-      - postgres_data:/source_data:ro
-      - backups:/backups
-    environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_USER=sore_user
-      - POSTGRES_PASSWORD=sore_password_2024
-      - POSTGRES_DB=sore_v2
-    entrypoint: |
-      sh -c "apk add --no-cache cron && \
-             echo '0 2 * * * pg_dump -h $$POSTGRES_HOST -U $$POSTGRES_USER -d $$POSTGRES_DB | gzip > /backups/dump_$$(date +%Y-%m-%d_%H-%M-%S).sql.gz' > /etc/crontabs/root && \
-             crond -f -L /dev/stdout"
-    depends_on:
-      - postgres
-    restart: unless-stopped
-    networks:
-      - sore_network
-    profiles:
-      - production
 
 volumes:
   postgres_data:

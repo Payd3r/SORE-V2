@@ -9,50 +9,39 @@ assignees: ''
 
 ## 📝 Descrizione
 
-Fornisci un riassunto delle modifiche e, se applicabile, l'issue che viene risolta.
-Includi anche la motivazione e il contesto. Elenca eventuali nuove dipendenze.
+Fornisci un riassunto chiaro e conciso delle modifiche. Se questa PR risolve un'issue esistente, linkala qui.
 
-Risolve # (issue)
+_Risolve # (issue)_
 
 ## 🔄 Tipo di Modifica
 
-Seleziona le opzioni pertinenti.
+_Seleziona le opzioni pertinenti spuntando le caselle (es. [x])._
 
-- [ ] 🐞 Bug fix (modifica non breaking che risolve un problema)
-- [ ] ✨ Nuova funzionalità (modifica non breaking che aggiunge funzionalità)
-- [ ] 💥 Breaking change (modifica che potrebbe rompere la compatibilità con la versione precedente)
-- [ ] 📖 Documentazione (questa modifica richiede un aggiornamento della documentazione)
+- [ ] 🐞 **Bug Fix**: Una modifica che risolve un bug senza introdurre breaking changes.
+- [ ] ✨ **Nuova Funzionalità**: Una modifica che aggiunge nuove funzionalità senza introdurre breaking changes.
+- [ ] 💥 **Breaking Change**: Una modifica che potrebbe rompere la compatibilità con la versione precedente.
+- [ ] 📖 **Documentazione**: Una modifica che riguarda esclusivamente la documentazione.
+- [ ] 🎨 **Refactoring**: Modifiche al codice che non risolvono bug né aggiungono funzionalità.
+- [ ] ⚡ **Performance**: Miglioramenti legati alle performance.
+- [ ] 🧪 **Test**: Aggiunta o modifica di test.
 
-## ✅ Checklist
+## ✅ Checklist di Auto-Revisione
+
+_Prima di inviare la PR, assicurati di aver completato i seguenti passaggi._
 
 - [ ] Il mio codice segue le linee guida di stile di questo progetto.
-- [ ] Ho effettuato una revisione del mio stesso codice.
-- [ ] Ho commentato il mio codice, in particolare nelle aree di difficile comprensione.
-- [ ] Ho apportato le modifiche corrispondenti alla documentazione.
-- [ ] Le mie modifiche non generano nuovi avvisi (warnings).
-- [ ] Ho verificato che l'applicazione si compili correttamente (`npm run build`).
-- [ ] Ho verificato che il linter non segnali errori (`npm run lint`).
+- [ ] Ho eseguito una revisione del mio stesso codice (`self-review`).
+- [ ] Ho aggiunto commenti chiari dove il codice è complesso.
+- [ ] Ho aggiornato la documentazione, se necessario.
+- [ ] Le mie modifiche non generano nuovi avvisi (warnings) del linter.
+- [ ] Ho aggiunto test che coprono le mie modifiche.
+- [ ] Tutti i test (nuovi ed esistenti) passano localmente.
 
-## How Has This Been Tested?
+## 🧪 Come sono state testate le modifiche?
 
-Please describe the tests that you ran to verify your changes. Provide instructions so we can reproduce. Please also list any relevant details for your test configuration
+Descrivi i test che hai eseguito per verificare le tue modifiche. Fornisci istruzioni chiare per la riproduzione.
 
-- [ ] Test A
-- [ ] Test B
-
-**Test Configuration**:
-* Firmware version:
-* Hardware:
-* Toolchain:
-* SDK:
-
-## Checklist:
-
-- [ ] My code follows the style guidelines of this project
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
-- [ ] Any dependent changes have been merged and published in downstream modules 
+**Configurazione di test (se rilevante):**
+- **Dispositivo:** (es. Desktop, iPhone 13)
+- **Browser:** (es. Chrome, Safari)
+- **Altro:** (es. Versioni specifiche di software) 

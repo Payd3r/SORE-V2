@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,11 +17,17 @@ import {
   Clock,
   RefreshCw,
   Download,
-  Share2
+  Share2,
+  Target
 } from 'lucide-react';
 import { MoodTrendChart } from './MoodTrendChart';
 import { MoodDistributionChart } from './MoodDistributionChart';
 import { RelationshipInsights } from './RelationshipInsights';
+import { LocationAnalytics } from './LocationAnalytics';
+import { ActivityAnalytics } from './ActivityAnalytics';
+import { ChallengeAnalytics } from './ChallengeAnalytics';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { t } from '@/lib/localization';
 
 interface AnalyticsData {
@@ -57,6 +63,21 @@ interface AnalyticsData {
     lastMonth: { averageMood: number; memoriesCount: number };
     change: { mood: number; memories: number };
   };
+  locationStats: {
+    topLocations: any[];
+    coordinates: any[];
+  };
+  activityStats: {
+    distribution: any[];
+    totalActivities: number;
+    diversity: number;
+  };
+  challengeStats: {
+    totalChallenges: number;
+    completedChallenges: number;
+    activeChallenges: number;
+    averageCompletion: number;
+  };
 }
 
 interface AnalyticsDashboardProps {
@@ -77,6 +98,7 @@ export default function AnalyticsDashboard({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'year'>('month');
+  const dashboardRef = useRef<HTMLDivElement>(null);
   
   // Funzione per mappare i periodi ai tipi che si aspettano i componenti
   const mapPeriodToChartType = (period: 'week' | 'month' | 'year'): 'daily' | 'weekly' | 'monthly' => {
@@ -87,7 +109,7 @@ export default function AnalyticsDashboard({
       default: return 'weekly';
     }
   };
-  const [activeTab, setActiveTab] = useState<'overview' | 'trends' | 'insights' | 'comparison'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'trends' | 'locations' | 'activities' | 'challenges' | 'insights' | 'comparison'>('overview');
 
   useEffect(() => {
     fetchAnalyticsData();
@@ -117,7 +139,7 @@ export default function AnalyticsDashboard({
       }
 
       const result = await response.json();
-      setData(result.data);
+      setData(result);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Errore sconosciuto');
     } finally {
@@ -126,20 +148,22 @@ export default function AnalyticsDashboard({
   };
 
   const handleExportData = () => {
-    if (!data) return;
-    
-    const dataStr = JSON.stringify(data, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `analytics-${selectedPeriod}-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    URL.revokeObjectURL(url);
+    if (!dashboardRef.current) return;
+
+    html2canvas(dashboardRef.current, {
+        scale: 2, // Higher scale for better quality
+        useCORS: true,
+        logging: true,
+    }).then((canvas) => {
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF({
+            orientation: 'landscape',
+            unit: 'pt',
+            format: [canvas.width, canvas.height]
+        });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+        pdf.save(`sore-analytics-${new Date().toISOString().split('T')[0]}.pdf`);
+    });
   };
 
   const renderOverviewStats = () => {
@@ -163,9 +187,9 @@ export default function AnalyticsDashboard({
             </div>
             <div className="mt-2">
               <span className={`text-xs ${
-                periodComparison.change.memories >= 0 ? 'text-green-600' : 'text-red-600'
+                (periodComparison?.change?.memories ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
               }`}>
-                {periodComparison.change.memories >= 0 ? '+' : ''}{periodComparison.change.memories}% dal mese scorso
+                {(periodComparison?.change?.memories ?? 0) >= 0 ? '+' : ''}{(periodComparison?.change?.memories ?? 0)}% dal mese scorso
               </span>
             </div>
           </CardContent>
@@ -178,16 +202,16 @@ export default function AnalyticsDashboard({
               <div>
                 <p className="text-sm text-gray-600">{t('analytics.metrics.averageMood')}</p>
                 <p className="text-2xl font-bold text-green-600">
-                  {periodComparison.thisMonth.averageMood.toFixed(1)}/5
+                  {(periodComparison?.thisMonth?.averageMood ?? 0).toFixed(1)}/5
                 </p>
               </div>
               <TrendingUp className="w-8 h-8 text-green-600" />
             </div>
             <div className="mt-2">
               <span className={`text-xs ${
-                periodComparison.change.mood >= 0 ? 'text-green-600' : 'text-red-600'
+                (periodComparison?.change?.mood ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
               }`}>
-                {periodComparison.change.mood >= 0 ? '+' : ''}{periodComparison.change.mood.toFixed(1)} dal mese scorso
+                {(periodComparison?.change?.mood ?? 0) >= 0 ? '+' : ''}{(periodComparison?.change?.mood ?? 0).toFixed(1)} dal mese scorso
               </span>
             </div>
           </CardContent>
@@ -200,7 +224,7 @@ export default function AnalyticsDashboard({
               <div>
                 <p className="text-sm text-gray-600">{t('analytics.metrics.moodCompatibility')}</p>
                 <p className="text-2xl font-bold text-purple-600">
-                  {Math.round(relationshipMetrics.moodCompatibility)}%
+                  {Math.round(relationshipMetrics.moodCompatibility || 0)}%
                 </p>
               </div>
               <Users className="w-8 h-8 text-purple-600" />
@@ -220,7 +244,7 @@ export default function AnalyticsDashboard({
               <div>
                 <p className="text-sm text-gray-600">{t('analytics.metrics.activityDiversity')}</p>
                 <p className="text-2xl font-bold text-orange-600">
-                  {Math.round(relationshipMetrics.activityDiversity)}%
+                  {Math.round(relationshipMetrics.activityDiversity || 0)}%
                 </p>
               </div>
               <Sparkles className="w-8 h-8 text-orange-600" />
@@ -249,103 +273,37 @@ export default function AnalyticsDashboard({
                 period={mapPeriodToChartType(selectedPeriod)}
               />
               <MoodDistributionChart 
-                data={data.moodDistribution}
+                data={data.moodDistribution} 
               />
             </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <RelationshipInsights 
-                data={data.insights}
-              />
-            </div>
+            <RelationshipInsights data={data.insights} />
           </div>
         );
-
       case 'trends':
         return (
           <div className="space-y-6">
             <MoodTrendChart 
-              data={data.moodTrends} 
-              period={mapPeriodToChartType(selectedPeriod)}
-              detailed={true}
+                data={data.moodTrends} 
+                period={mapPeriodToChartType(selectedPeriod)}
+            />
+            <MoodDistributionChart 
+                data={data.moodDistribution} 
             />
           </div>
         );
-
+      case 'locations':
+        return <LocationAnalytics data={data.locationStats} />;
+      case 'activities':
+        return <ActivityAnalytics data={data.activityStats} />;
+      case 'challenges':
+        return <ChallengeAnalytics data={data.challengeStats} />;
       case 'insights':
-        return (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <RelationshipInsights 
-              data={data.insights}
-            />
-            
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="w-5 h-5" />
-                  {t('analytics.insights.suggestions')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {data.insights.improvementSuggestions.map((suggestion, index) => (
-                    <div key={index} className="p-3 bg-blue-50 rounded-lg">
-                      <p className="text-sm text-blue-800">{suggestion}</p>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        );
+        return <RelationshipInsights data={data.insights} />;
 
       case 'comparison':
         return (
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('periodComparison')}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <h4 className="font-medium">{t('thisMonth')}</h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">{t('averageMood')}</span>
-                        <span className="font-medium">
-                          {data.periodComparison.thisMonth.averageMood.toFixed(1)}/5
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">{t('memoriesCreated')}</span>
-                        <span className="font-medium">
-                          {data.periodComparison.thisMonth.memoriesCount}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <h4 className="font-medium">{t('lastMonth')}</h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">{t('averageMood')}</span>
-                        <span className="font-medium">
-                          {data.periodComparison.lastMonth.averageMood.toFixed(1)}/5
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">{t('memoriesCreated')}</span>
-                        <span className="font-medium">
-                          {data.periodComparison.lastMonth.memoriesCount}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+          <div className="text-center p-8">
+            <p>Confronto tra periodi - Prossimamente...</p>
           </div>
         );
 
@@ -354,35 +312,34 @@ export default function AnalyticsDashboard({
     }
   };
 
-  if (error) {
+  if (isLoading) {
     return (
-      <Card className={className}>
-        <CardContent className="p-6">
-          <div className="text-center">
-            <p className="text-red-600 mb-4">{error}</p>
-            <Button onClick={fetchAnalyticsData} variant="outline">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              {t('retry')}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex justify-center items-center h-96">
+        <RefreshCw className="w-8 h-8 animate-spin text-gray-500" />
+      </div>
     );
   }
 
+  if (error) {
+    return (
+      <div className="text-center py-10">
+        <p className="text-red-500">{error}</p>
+        <Button onClick={fetchAnalyticsData} className="mt-4">
+          Riprova
+        </Button>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return <div className="text-center py-10">Nessun dato disponibile.</div>;
+  }
+
   return (
-    <div className={`space-y-6 ${className}`}>
-      {/* Header */}
-      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            {t('analyticsDashboard')}
-          </h1>
-          <p className="text-gray-600">
-            {t('deepAnalysis')}
-          </p>
-        </div>
-        
+    <div ref={dashboardRef} className={`bg-white p-6 rounded-lg shadow-sm ${className}`}>
+      {/* Header e Controlli */}
+      <div className="flex flex-wrap items-center justify-between mb-6 gap-4">
+        <h2 className="text-2xl font-bold text-gray-800">Pannello di Analisi</h2>
         <div className="flex items-center gap-3">
           {/* Period Selector */}
           <div className="flex bg-gray-100 rounded-lg p-1">
@@ -432,6 +389,9 @@ export default function AnalyticsDashboard({
         {[
           { key: 'overview', label: 'Panoramica', icon: BarChart3 },
           { key: 'trends', label: 'Tendenze', icon: TrendingUp },
+          { key: 'locations', label: 'Luoghi', icon: MapPin },
+          { key: 'activities', label: 'Attività', icon: Activity },
+          { key: 'challenges', label: 'Obiettivi', icon: Target },
           { key: 'insights', label: 'Insights', icon: Sparkles },
           { key: 'comparison', label: 'Confronti', icon: Calendar },
         ].map(({ key, label, icon: Icon }) => (

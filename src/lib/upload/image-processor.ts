@@ -207,6 +207,13 @@ export async function processAndSaveImage(
 
         const parser = exifParser.create(Buffer.from(buffer));
         const exifData = parser.parse();
+
+        // Extract Live Photo Content ID from metadata (if present)
+        // Note: This often resides in user data / quicktime tags, not standard EXIF.
+        // The exact tag name can vary. 'ContentIdentifier' is a common one used by Apple.
+        // We might need a more robust metadata extractor if exif-parser doesn't find it.
+        const livePhotoContentId = (exifData?.tags as any)?.ContentIdentifier || null;
+
         const gpsData = (exifData && exifData.tags && exifData.tags.GPSLatitude && exifData.tags.GPSLongitude) ? {
             latitude: exifData.tags.GPSLatitude,
             longitude: exifData.tags.GPSLongitude,
@@ -240,7 +247,9 @@ export async function processAndSaveImage(
                 filename: path.basename(original.path),
                 category: 'uncategorized',
                 hash: uuidv4(),
-            },
+                isLivePhoto: !!livePhotoContentId,
+                livePhotoContentId: livePhotoContentId,
+            } as any,
         });
 
         await prisma.image.update({
@@ -254,6 +263,7 @@ export async function processAndSaveImage(
             id: imageRecord.id,
             url: original.url,
             originalFilename,
+            livePhotoContentId,
         };
 
     } catch (error) {

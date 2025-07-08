@@ -7,9 +7,11 @@ import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, LayoutGrid, Rows } from 'lucide-react';
 import { MemoryCard } from './MemoryCard';
 import { TimelineFilters } from './TimelineFilters';
-import { type TimelineData, type TimelineView, type TimelineMemory, type TimelineGroup } from '@/lib/timeline-system';
+import { type TimelineData, type TimelineView, type TimelineMemory, type TimelineGroup, type TimelineMoment } from '@/lib/timeline-system';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Drawer, DrawerContent } from '@/components/ui/drawer';
+import MomentDetailView from '@/components/MomentDetailView';
 
 interface TimelineProps {
   initialData?: TimelineData;
@@ -26,6 +28,7 @@ interface TimelineState {
   isLoading: boolean;
   error: string | null;
   selectedMemoryId: string | null;
+  selectedMoment: TimelineMoment | null;
 }
 
 export default function Timeline({
@@ -43,6 +46,7 @@ export default function Timeline({
     isLoading: false,
     error: null,
     selectedMemoryId: null,
+    selectedMoment: null,
   });
 
   const [displayMode, setDisplayMode] = useState<'timeline' | 'grid'>('timeline');
@@ -97,6 +101,13 @@ export default function Timeline({
       selectedMemoryId: prev.selectedMemoryId === memoryId ? null : memoryId 
     }));
   };
+
+  const handleMomentSelect = (moment: TimelineMoment) => {
+    setState(prev => ({
+      ...prev,
+      selectedMoment: moment
+    }));
+  }
   
   const getCurrentPeriodLabel = (): string => {
     const { currentDate, view } = state;
@@ -174,6 +185,7 @@ export default function Timeline({
                   variant='normal'
                   isSelected={state.selectedMemoryId === memory.id}
                   onSelect={() => handleMemorySelect(memory.id)}
+                  onMomentSelect={handleMomentSelect}
                 />
               ))}
             </div>
@@ -198,6 +210,7 @@ export default function Timeline({
                     variant="normal"
                     isSelected={state.selectedMemoryId === memory.id}
                     onSelect={() => handleMemorySelect(memory.id)}
+                    onMomentSelect={handleMomentSelect}
                 />
             ))}
         </motion.div>
@@ -222,6 +235,35 @@ export default function Timeline({
       {!state.isLoading && !state.error && state.data && (
         displayMode === 'timeline' ? renderTimelineView(state.data.groups) : renderGridView(state.data.groups.flatMap(g => g.memories))
       )}
+
+      <Drawer
+        open={!!state.selectedMoment}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setState(prev => ({ ...prev, selectedMoment: null }));
+          }
+        }}
+      >
+        <DrawerContent>
+          {state.selectedMoment && (
+            <MomentDetailView
+              moment={{
+                id: state.selectedMoment.id,
+                combinedImageUrl: state.selectedMoment.combinedImage || '',
+                livePhoto: state.selectedMoment.images.some(i => i.isLivePhoto),
+                videoUrl: state.selectedMoment.images.find(i => i.isLivePhoto)?.Video?.mp4Path || undefined,
+                originalImages: { // This part needs to be mapped correctly
+                  initiator: { url: '', userId: '', userNickname: '', timestamp: '' },
+                  participant: { url: '', userId: '', userNickname: '', timestamp: '' },
+                },
+                createdAt: '', // These fields need data from the selected moment
+                status: 'completed'
+              }}
+              onClose={() => setState(prev => ({ ...prev, selectedMoment: null }))}
+            />
+          )}
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 } 

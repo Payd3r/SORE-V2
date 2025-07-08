@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 interface CoupleData {
   id: string
@@ -19,17 +22,19 @@ interface CoupleData {
 }
 
 export default function CoupleSetup() {
-  const { data: session, status } = useSession()
+  const { data: session, status, update: updateSession } = useSession()
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [currentCouple, setCurrentCouple] = useState<CoupleData | null>(null)
   const [hasCouple, setHasCouple] = useState(false)
   const [activeTab, setActiveTab] = useState<'create' | 'join'>('create')
+  const [phase, setPhase] = useState<'couple' | 'profile' | 'done'>('couple')
 
   // Form states
   const [coupleName, setCoupleName] = useState('')
   const [anniversary, setAnniversary] = useState('')
   const [inviteCode, setInviteCode] = useState('')
+  const [userName, setUserName] = useState(session?.user?.name || '')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -85,10 +90,10 @@ export default function CoupleSetup() {
       const data = await response.json()
 
       if (response.ok) {
-        setSuccess('Coppia creata con successo!')
+        setSuccess('Coppia creata con successo! Ora personalizza il tuo profilo.')
         setCurrentCouple(data.couple)
         setHasCouple(true)
-        setTimeout(() => router.push('/dashboard'), 2000)
+        setPhase('profile')
       } else {
         setError(data.error || 'Errore nella creazione della coppia')
       }
@@ -119,10 +124,10 @@ export default function CoupleSetup() {
       const data = await response.json()
 
       if (response.ok) {
-        setSuccess('Ti sei unito alla coppia con successo!')
+        setSuccess('Ti sei unito alla coppia! Ora personalizza il tuo profilo.')
         setCurrentCouple(data.couple)
         setHasCouple(true)
-        setTimeout(() => router.push('/dashboard'), 2000)
+        setPhase('profile')
       } else {
         setError(data.error || 'Errore nell\'unirti alla coppia')
       }
@@ -130,6 +135,37 @@ export default function CoupleSetup() {
       setError('Errore di connessione')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleProfileSetup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+        // Aggiorna il nome utente
+        const nameUpdateRes = await fetch('/api/users/me', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: userName }),
+        });
+
+        if (!nameUpdateRes.ok) {
+            throw new Error('Failed to update user name');
+        }
+        
+        // Forza l'aggiornamento della sessione per riflettere le modifiche
+        await updateSession();
+
+        setSuccess('Profilo aggiornato! Verrai reindirizzato...');
+        setPhase('done');
+        setTimeout(() => router.push('/timeline'), 2000);
+
+    } catch (err) {
+        setError(err instanceof Error ? err.message : 'An unknown error occurred');
+    } finally {
+        setLoading(false);
     }
   }
 
@@ -204,6 +240,51 @@ export default function CoupleSetup() {
         </div>
       </div>
     )
+  }
+
+  // Profile Setup Phase
+  if (phase === 'profile') {
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-green-100 to-cyan-100 flex items-center justify-center p-4">
+            <div className="max-w-md w-full bg-white/80 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-white/20">
+                <div className="text-center mb-6">
+                    <h1 className="text-3xl font-bold text-gray-800 mb-2">Quasi Fatto!</h1>
+                    <p className="text-gray-600">Personalizza il tuo profilo per iniziare.</p>
+                </div>
+
+                <form onSubmit={handleProfileSetup} className="space-y-6">
+                    <div className="flex flex-col items-center space-y-4">
+                        <Avatar className="w-24 h-24">
+                            <AvatarImage src={session?.user?.image || ''} />
+                            <AvatarFallback>{userName?.charAt(0).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <p className="text-sm text-gray-500">Puoi cambiare la foto più tardi dal tuo profilo.</p>
+                    </div>
+
+                    <div>
+                        <label htmlFor="userName" className="block text-sm font-medium text-gray-700 mb-1">
+                            Il tuo nome
+                        </label>
+                        <Input
+                            id="userName"
+                            type="text"
+                            value={userName}
+                            onChange={(e) => setUserName(e.target.value)}
+                            required
+                            className="w-full"
+                        />
+                    </div>
+                    
+                    {error && <p className="text-red-500 text-sm">{error}</p>}
+                    {success && <p className="text-green-500 text-sm">{success}</p>}
+
+                    <Button type="submit" disabled={loading} className="w-full">
+                        {loading ? 'Salvataggio...' : 'Completa e Inizia'}
+                    </Button>
+                </form>
+            </div>
+        </div>
+    );
   }
 
   return (

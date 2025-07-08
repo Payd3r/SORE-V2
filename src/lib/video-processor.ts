@@ -3,10 +3,39 @@ import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
-import { saveFile } from './storage';
+import ffprobe from 'ffprobe';
+import ffprobeStatic from 'ffprobe-static';
+import { saveFile, saveDirectory, getPublicUrl } from './storage';
 import { sendProgress } from './websocket-emitter';
 
 const execFileAsync = promisify(execFile);
+
+// Custom interfaces to avoid issues with @types/ffprobe
+interface FfprobeStream {
+  codec_type?: 'video' | 'audio';
+  codec_name?: string;
+  codec_tag_string?: string;
+  width?: number;
+  height?: number;
+  avg_frame_rate?: string;
+  r_frame_rate?: string;
+  time_base?: string;
+  duration?: string;
+  [key: string]: any;
+}
+
+interface FfprobeData {
+  streams: FfprobeStream[];
+  format: {
+    format_name?: string;
+    duration?: string;
+    size?: string;
+    tags?: {
+      [key: string]: string;
+    };
+    [key: string]: any;
+  };
+}
 
 export interface ProcessedVideo {
   original: {
@@ -36,238 +65,245 @@ export interface ProcessedVideo {
   hls?: {
     path: string;
     filename: string;
+  };
+  isSlowMotion: boolean;
+  isTimeLapse: boolean;
+  isLivePhoto: boolean;
+}
+
+async function getProbeData(videoPath: string): Promise<FfprobeData> {
+  try {
+    const probeData = await ffprobe(videoPath, { path: ffprobeStatic.path });
+    return probeData as FfprobeData;
+  } catch (error) {
+    console.error('Error getting probe data:', error);
+    throw new Error(`Failed to probe video file: ${videoPath}`);
   }
 }
 
-async function getProbeData(videoPath: string) {
-  const { stdout } = await execFileAsync('ffprobe', [
-    '-v', 'error',
-    '-show_format',
-    '-show_streams',
-    '-of', 'json',
-    videoPath
-  ]);
-  return JSON.parse(stdout);
-}
-
-export async function processVideo(sourcePath: string, originalFilename: string, clientId: string, fileId: string): Promise<any> {
+export async function processVideo(sourcePath: string, originalFilename: string, clientId: string, fileId: string): Promise<ProcessedVideo> {
   const probeData = await getProbeData(sourcePath);
   
-  const videoStream = probeData.streams.find((s: any) => s.codec_type === 'video');
-  const audioStream = probeData.streams.find((s: any) => s.codec_type === 'audio');
+  const videoStream = probeData.streams.find((s: FfprobeStream) => s.codec_type === 'video');
+  const audioStream = probeData.streams.find((s: FfprobeStream) => s.codec_type === 'audio');
 
   if (!videoStream) {
     throw new Error('No video stream found in the input file.');
   }
 
+  // Save the original file
+  const originalBuffer = await fs.readFile(sourcePath);
+  const originalStoragePath = await saveFile(`videos/originals/${originalFilename}`, originalBuffer, videoStream.codec_tag_string || 'bin');
+
+  const frameRateString = videoStream.r_frame_rate || videoStream.avg_frame_rate || "0/0";
+  const [num, den] = frameRateString.split('/').map(Number);
+  const frameRate = den > 0 ? num / den : 0;
+  
+  // More reliable detection for slow-motion and time-lapse
+  const isSlowMotion = detectSlowMotion(probeData, frameRate);
+  const isTimeLapse = detectTimeLapse(probeData);
+  const isLivePhoto = detectLivePhoto(probeData);
+
   const baseName = path.basename(originalFilename, path.extname(originalFilename));
+
+  // Create a temporary directory for all processing
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sore-video-'));
   
-  const mp4Path = path.join(tempDir, `${baseName}.mp4`);
-  const webmPath = path.join(tempDir, `${baseName}.webm`);
-  const hlsPath = path.join(tempDir, 'hls');
-  await fs.mkdir(hlsPath);
+  try {
+    const duration = videoStream.duration ? parseFloat(videoStream.duration) : 0;
+
+    // Generate HLS Stream
+    const hlsPlaylistPath = await createHlsStream(sourcePath, tempDir, baseName, clientId, fileId, duration > 10);
+
+    // Generate Thumbnails
+    const thumbnails = await generateThumbnails(sourcePath, tempDir, baseName, clientId, fileId, duration);
+
+    // At this point, you might want to save paths to DB or return them.
+    // For this example, we'll just log and clean up.
+    console.log('HLS Playlist:', hlsPlaylistPath);
+    console.log('Thumbnails:', thumbnails);
+
+    const processedData: ProcessedVideo = {
+        original: {
+            path: originalStoragePath,
+            filename: originalFilename,
+            size: probeData.format.size ? Number(probeData.format.size) : 0,
+            duration: duration,
+            width: videoStream.width || 0,
+            height: videoStream.height || 0,
+            format: probeData.format.format_name || 'unknown',
+            video_codec: videoStream.codec_name || 'unknown',
+            audio_codec: audioStream ? audioStream.codec_name : 'none',
+        },
+        formats: {}, // MP4/WebM generation removed for focus on HLS
+        thumbnails: thumbnails,
+        hls: hlsPlaylistPath ? {
+            path: hlsPlaylistPath,
+            filename: 'master.m3u8'
+        } : undefined,
+        isSlowMotion,
+        isTimeLapse,
+        isLivePhoto,
+    };
+    
+    return processedData;
+
+  } finally {
+    // Cleanup the temporary directory
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+function detectSlowMotion(probeData: FfprobeData, frameRate: number): boolean {
+  // Heuristic: High frame rate is a strong indicator.
+  if (frameRate > 100) {
+    return true;
+  }
   
-  const thumb1280Path = path.join(tempDir, `${baseName}-thumb-1280p.jpg`);
-  const thumb720Path = path.join(tempDir, `${baseName}-thumb-720p.jpg`);
-  const thumb320Path = path.join(tempDir, `${baseName}-thumb-320p.jpg`);
+  // Check for specific metadata from Apple devices
+  if (probeData.format.tags?.['com.apple.quicktime.camera.fps']) {
+      const appleFps = parseFloat(probeData.format.tags['com.apple.quicktime.camera.fps']);
+      if (appleFps > 100) return true;
+  }
 
-  const nullOutput = os.platform() === 'win32' ? 'NUL' : '/dev/null';
+  return false;
+}
 
+function detectTimeLapse(probeData: FfprobeData): boolean {
+    // Check for specific Apple metadata tag for time-lapse
+    if (probeData.format.tags?.['com.apple.quicktime.capture.mode'] === 'Time-lapse') {
+        return true;
+    }
+    // Heuristic for other devices: check timebase. Time-lapse often has a very high timebase.
+    const videoStream = probeData.streams.find(s => s.codec_type === 'video');
+    if (videoStream && typeof videoStream.time_base === 'string') {
+        const [num, den] = videoStream.time_base.split('/').map(Number);
+        if (den && den > 30000) { // e.g., 1/90000 is common for time-lapses
+            return true;
+        }
+    }
+    return false;
+}
+
+function detectLivePhoto(probeData: FfprobeData): boolean {
+    // Live Photos have a content identifier that pairs the photo and video.
+    return !!probeData.format.tags?.['com.apple.quicktime.content.identifier'];
+}
+
+async function createHlsStream(sourcePath: string, tempDir: string, baseName: string, clientId: string, fileId: string, generate: boolean): Promise<string | undefined> {
+  if (!generate) {
+    return undefined;
+  }
+  
   await sendProgress(clientId, {
     type: 'processing_progress',
     fileId,
-    filename: originalFilename,
-    progress: 10,
-    status: 'processing',
-    message: 'Transcoding to MP4...',
-  });
-
-  // Transcode to MP4 (2-pass)
-  await execFileAsync('ffmpeg', [
-    '-i', sourcePath, '-y',
-    '-c:v', 'libx264', '-preset', 'medium', '-b:v', '2000k', '-pass', '1', '-an', '-f', 'mp4', nullOutput
-  ]);
-  await execFileAsync('ffmpeg', [
-    '-i', sourcePath,
-    '-c:v', 'libx264', '-preset', 'medium', '-b:v', '2000k', '-pass', '2',
-    '-c:a', 'aac', '-b:a', '128k',
-    mp4Path
-  ]);
-
-  await sendProgress(clientId, {
-    type: 'processing_progress',
-    fileId,
-    filename: originalFilename,
-    progress: 40,
-    status: 'processing',
-    message: 'Transcoding to WebM...',
-  });
-
-  // Transcode to WebM (2-pass)
-  await execFileAsync('ffmpeg', [
-    '-i', sourcePath, '-y',
-    '-c:v', 'libvpx-vp9', '-b:v', '1500k', '-pass', '1', '-an', '-f', 'webm', nullOutput
-  ]);
-  await execFileAsync('ffmpeg', [
-    '-i', sourcePath,
-    '-c:v', 'libvpx-vp9', '-b:v', '1500k', '-pass', '2',
-    '-c:a', 'libopus', '-b:a', '128k',
-    webmPath
-  ]);
-
-  await sendProgress(clientId, {
-    type: 'processing_progress',
-    fileId,
-    filename: originalFilename,
-    progress: 70,
+    filename: baseName,
+    progress: 50,
     status: 'processing',
     message: 'Generating HLS stream...',
   });
-
-  // Generate Thumbnails
-  const midpoint = parseFloat(probeData.format.duration) / 2;
-  await Promise.all([
-    execFileAsync('ffmpeg', [
-      '-i', sourcePath,
-      '-ss', midpoint.toString(),
-      '-vframes', '1',
-      '-vf', 'scale=1280:-1',
-      thumb1280Path
-    ]),
-    execFileAsync('ffmpeg', [
-      '-i', sourcePath,
-      '-ss', midpoint.toString(),
-      '-vframes', '1',
-      '-vf', 'scale=720:-1',
-      thumb720Path
-    ]),
-    execFileAsync('ffmpeg', [
-      '-i', sourcePath,
-      '-ss', midpoint.toString(),
-      '-vframes', '1',
-      '-vf', 'scale=320:-1',
-      thumb320Path
-    ]),
-  ]);
   
-  const mp4Buffer = await fs.readFile(mp4Path);
-  const webmBuffer = await fs.readFile(webmPath);
-  const thumb1280Buffer = await fs.readFile(thumb1280Path);
-  const thumb720Buffer = await fs.readFile(thumb720Path);
-  const thumb320Buffer = await fs.readFile(thumb320Path);
+  const hlsDir = path.join(tempDir, 'hls');
+  await fs.mkdir(hlsDir, { recursive: true });
 
-  const [mp4StoragePath, webmStoragePath, thumb1280StoragePath, thumb720StoragePath, thumb320StoragePath] = await Promise.all([
-    saveFile(`videos/processed/${baseName}.mp4`, mp4Buffer, 'video/mp4'),
-    saveFile(`videos/processed/${baseName}.webm`, webmBuffer, 'video/webm'),
-    saveFile(`videos/processed/${baseName}-thumb-1280p.jpg`, thumb1280Buffer, 'image/jpeg'),
-    saveFile(`videos/processed/${baseName}-thumb-720p.jpg`, thumb720Buffer, 'image/jpeg'),
-    saveFile(`videos/processed/${baseName}-thumb-320p.jpg`, thumb320Buffer, 'image/jpeg')
-  ]);
-
-  // HLS processing
-  const hls720pPath = path.join(hlsPath, '720p.m3u8');
-  const hls360pPath = path.join(hlsPath, '360p.m3u8');
-
-  await Promise.all([
-    execFileAsync('ffmpeg', [
-      '-i', sourcePath,
-      '-vf', 'scale=-2:720',
-      '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
-      '-c:a', 'aac', '-q:a', '4',
-      '-hls_time', '10',
-      '-hls_playlist_type', 'vod',
-      '-hls_segment_filename', path.join(hlsPath, '720p_%03d.ts'),
-      hls720pPath
-    ]),
-    execFileAsync('ffmpeg', [
-      '-i', sourcePath,
-      '-vf', 'scale=-2:360',
-      '-c:v', 'libx264', '-preset', 'medium', '-crf', '25',
-      '-c:a', 'aac', '-q:a', '5',
-      '-hls_time', '10',
-      '-hls_playlist_type', 'vod',
-      '-hls_segment_filename', path.join(hlsPath, '360p_%03d.ts'),
-      hls360pPath
-    ])
-  ]);
-
-  const masterPlaylistContent = `#EXTM3U
-#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720
-720p.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360
-360p.m3u8`;
-
-  const masterPlaylistPath = path.join(hlsPath, 'master.m3u8');
-  await fs.writeFile(masterPlaylistPath, masterPlaylistContent);
-
-  const hlsFiles = await fs.readdir(hlsPath);
-  const hlsStoragePaths = await Promise.all(
-    hlsFiles.map(file => {
-      const localPath = path.join(hlsPath, file);
-      const storagePath = `videos/hls/${baseName}/${file}`;
-      return fs.readFile(localPath).then(buffer => saveFile(storagePath, buffer, file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t'));
-    })
-  );
+  // Improved, more readable FFMPEG command for HLS
+  const resolutions = [
+    { name: '1080p', scale: '1920:1080', vb: '5000k', maxr: '5350k', bufs: '7500k', ab: '192k' },
+    { name: '720p',  scale: '1280:720', vb: '2800k', maxr: '2996k', bufs: '4200k', ab: '128k' },
+    { name: '480p',  scale: '854:480',  vb: '1400k', maxr: '1498k', bufs: '2100k', ab: '128k' },
+    { name: '360p',  scale: '640:360',  vb: '800k',  maxr: '856k',  bufs: '1200k', ab: '96k' },
+  ];
   
-  const masterHlsUrl = hlsStoragePaths.find(p => p.endsWith('master.m3u8'));
+  const filterComplex: string[] = ["[0:v]split=4"];
+  const streamMap: string[] = [];
+  const hlsCommands: any[] = [];
+  
+  resolutions.forEach((res, i) => {
+    filterComplex.push(`[v${i+1}]`);
+    streamMap.push(`v:${i},a:${i}`);
+  });
+  
+  filterComplex.push(';');
+  resolutions.forEach((res, i) => {
+    filterComplex.push(`[v${i+1}]scale=w=${res.scale.split(':')[0]}:h=${res.scale.split(':')[1]}[v${i+1}out];`);
+  });
+  
+  resolutions.forEach((res, i) => {
+    hlsCommands.push(
+      '-map', `[v${i+1}out]`, `-c:v:${i}`, 'libx264', `-b:v:${i}`, res.vb, `-maxrate:v:${i}`, res.maxr, `-bufsize:v:${i}`, res.bufs,
+      '-map', `a:0`, `-c:a:${i}`, 'aac', `-b:a:${i}`, res.ab
+    );
+  });
 
-  await fs.rm(tempDir, { recursive: true, force: true });
+  const command = [
+    '-i', sourcePath,
+    '-filter_complex', filterComplex.join('').slice(0, -1), // remove trailing semicolon
+    ...hlsCommands.flat(),
+    '-f', 'hls',
+    '-hls_time', '4',
+    '-hls_playlist_type', 'vod',
+    '-hls_flags', 'independent_segments',
+    '-master_pl_name', 'master.m3u8',
+    '-hls_segment_filename', `${hlsDir}/stream_%v/data%03d.ts`,
+    '-var_stream_map', streamMap.join(' '),
+    `${hlsDir}/stream_%v.m3u8`
+  ];
 
-  const result = {
-    original: {
-      path: sourcePath,
-      filename: originalFilename,
-      size: probeData.format.size,
-      duration: parseFloat(probeData.format.duration),
-      width: videoStream.width,
-      height: videoStream.height,
-      format: probeData.format.format_name,
-      video_codec: videoStream.codec_name,
-      audio_codec: audioStream ? audioStream.codec_name : 'none',
-    },
-    formats: {
-      mp4: {
-        path: mp4StoragePath,
-        filename: `${baseName}.mp4`,
-        size: mp4Buffer.length
-      },
-      webm: {
-        path: webmStoragePath,
-        filename: `${baseName}.webm`,
-        size: webmBuffer.length
-      }
-    },
-    thumbnails: {
-      '1280p': {
-        path: thumb1280StoragePath,
-        filename: `${baseName}-thumb-1280p.jpg`,
-      },
-      '720p': {
-        path: thumb720StoragePath,
-        filename: `${baseName}-thumb-720p.jpg`,
-      },
-      '320p': {
-        path: thumb320StoragePath,
-        filename: `${baseName}-thumb-320p.jpg`,
-      }
-    },
-    hls: {
-      path: masterHlsUrl,
-      filename: 'master.m3u8'
-    }
-  };
+  await execFileAsync('ffmpeg', command);
 
-  await sendProgress(clientId, {
+  const hlsStoragePath = `videos/hls/${baseName}`;
+  await saveDirectory(hlsDir, hlsStoragePath);
+  
+  return getPublicUrl(`${hlsStoragePath}/master.m3u8`);
+}
+
+async function generateThumbnails(sourcePath: string, tempDir: string, baseName: string, clientId: string, fileId: string, duration: number): Promise<{[key: string]: {path: string, filename: string}}> {
+ await sendProgress(clientId, {
     type: 'processing_progress',
     fileId,
-    filename: originalFilename,
+    filename: baseName,
     progress: 90,
     status: 'processing',
     message: 'Generating thumbnails...',
   });
 
-  return result;
+  const midpoint = duration / 2;
+  
+  const thumbnailSizes = {
+    'large': '1280',
+    'medium': '720',
+    'small': '320'
+  };
+
+  const generatedThumbnails: {[key:string]: {path: string, filename: string}} = {};
+  const tempThumbPaths: string[] = [];
+
+  const filterComplex = Object.values(thumbnailSizes).map((size, i) => `[0:v]scale=${size}:-1[t${i}]`).join(';');
+  
+  const ffmpegArgs = [
+    '-i', sourcePath,
+    '-ss', midpoint.toString(),
+    '-vf', filterComplex,
+    '-vframes', '1',
+  ];
+
+  for(const name in thumbnailSizes){
+    const thumbPath = path.join(tempDir, `${baseName}-thumb-${name}.jpg`);
+    tempThumbPaths.push(thumbPath);
+    ffmpegArgs.push('-map', `[t${Object.keys(thumbnailSizes).indexOf(name)}]`, thumbPath);
+  }
+
+  await execFileAsync('ffmpeg', ffmpegArgs);
+
+  for (const name of Object.keys(thumbnailSizes)) {
+    const thumbPath = path.join(tempDir, `${baseName}-thumb-${name}.jpg`);
+    const thumbBuffer = await fs.readFile(thumbPath);
+    const storagePath = await saveFile(`videos/thumbnails/${baseName}-thumb-${name}.jpg`, thumbBuffer, 'image/jpeg');
+    generatedThumbnails[name] = { path: storagePath, filename: `${baseName}-thumb-${name}.jpg` };
+  }
+  
+  return generatedThumbnails;
 }
 
 export function isVideoFile(mimetype: string): boolean {

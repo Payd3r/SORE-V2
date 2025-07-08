@@ -1,6 +1,7 @@
 import { prisma } from './prisma';
 import { customFetch } from './api';
 import { encrypt, decrypt } from './crypto';
+import { sendNotification } from './web-push';
 
 interface PushSubscription {
   endpoint: string;
@@ -94,14 +95,7 @@ export async function sendPushNotificationToUser(
     const decryptedSubscription = decrypt(user.pushSubscription);
     const subscription: PushSubscription = JSON.parse(decryptedSubscription);
     
-    // In a real implementation, you would use a library like web-push
-    // For now, we'll simulate the push notification
-    console.log('Sending push notification to user:', userId, payload);
-    
-    // This is where you would integrate with a push service like:
-    // - Firebase Cloud Messaging (FCM)
-    // - Apple Push Notification Service (APNs)
-    // - Web Push Protocol
+    await sendNotification(subscription, payload);
     
     return true;
   } catch (error) {

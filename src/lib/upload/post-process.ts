@@ -1,25 +1,25 @@
 import { prisma } from '@/lib/prisma';
-import { writeFile, readFile } from 'fs/promises';
+import { writeFile, mkdtemp, rm } from 'fs/promises';
 import path from 'path';
-import { isImageFile, processImage, convertHeicBuffer, convertRawBuffer, ProcessedImage } from './image-processor';
-import { checkImageDuplication, classifyImageFromBuffer } from '../image-classification';
+import os from 'os';
+import { processAndSaveImage, ProcessedImageResult } from './image-processor';
 import { UploadType } from './multer-config';
-import { saveFile } from '../storage';
-import { isVideoFile, processVideo } from '../video-processor';
-import { sendProgress } from '../websocket-emitter';
-import { v4 as uuidv4 } from 'uuid';
+import { processVideo } from '../video-processor';
+import { ProcessedFile } from './types';
+
+// Definisco le interfacce necessarie che non sono in types.ts
+interface FileData {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
+}
 
 interface ProcessContext {
   coupleId: string;
   uploadType: UploadType;
   memoryId?: string | null;
   momentId?: string | null;
-}
-
-interface FileData {
-  buffer: Buffer;
-  originalname: string;
-  mimetype: string;
+  userId: string;
 }
 
 interface ProcessResultSuccess {
@@ -32,15 +32,7 @@ interface ProcessResultSuccess {
   size: number;
   width: number;
   height: number;
-  processed: ProcessedImage;
-}
-
-interface ProcessResultDuplicate {
-  type: 'duplicate';
-  filename: string;
-  originalName: string;
-  existingImageId: string;
-  existingImagePath: string;
+  processed: ProcessedImageResult;
 }
 
 interface ProcessResultError {
@@ -49,7 +41,7 @@ interface ProcessResultError {
   error: string;
 }
 
-type ProcessResult = ProcessResultSuccess | ProcessResultDuplicate | ProcessResultError;
+type ProcessResult = ProcessResultSuccess | ProcessResultError | ProcessedFile;
 
 /**
  * Processes a single file group (image and optional video), stores it,
@@ -62,132 +54,88 @@ export async function processFileGroup(
   context: ProcessContext,
   clientId: string
 ): Promise<ProcessResult> {
-  const fileId = uuidv4();
+  let tempVideoPath: string | undefined;
+  let tempDir: string | undefined;
 
   try {
-    await sendProgress(clientId, {
-      type: 'upload_progress',
-      fileId,
-      filename: imageFile.originalname,
-      progress: 0,
-      status: 'uploading',
-      message: 'Starting upload...',
-    });
+    let processedVideoData: any; // Per tenere i dati del video
 
-    let imageBuffer = imageFile.buffer;
-    let finalMimeType = imageFile.mimetype;
-
-    // --- CONVERSION HEIC/RAW ---
-    if (imageFile.mimetype === 'image/heic' || imageFile.mimetype === 'image/heif') {
-      imageBuffer = await convertHeicBuffer(imageFile.buffer);
-      finalMimeType = 'image/jpeg';
-    } else if (!isImageFile(imageFile.mimetype)) {
-        try {
-            imageBuffer = await convertRawBuffer(imageFile.buffer);
-            finalMimeType = 'image/jpeg';
-        } catch(rawError: any) {
-            console.error(`Conversione RAW fallita per ${imageFile.originalname}:`, rawError);
-            return { type: 'error', originalName: imageFile.originalname, error: `Conversione RAW fallita: ${rawError.message}` };
-        }
-    }
-    
-    // --- DEDUPLICATION ---
-    const deduplicationResult = await checkImageDuplication(imageBuffer, prisma, context.coupleId);
-    if (deduplicationResult.isDuplicate) {
-      return {
-        type: 'duplicate',
-        filename: imageFile.originalname,
-        originalName: imageFile.originalname,
-        existingImageId: deduplicationResult.existingImageId!,
-        existingImagePath: deduplicationResult.existingImagePath!,
-      };
+    // 1. Se c'è un video, lo processo in memoria prima di toccare il DB
+    if (videoFile && videoFile.buffer) {
+      tempDir = await mkdtemp(path.join(os.tmpdir(), 'sore-video-upload-'));
+      tempVideoPath = path.join(tempDir, videoFile.originalname);
+      await writeFile(tempVideoPath, videoFile.buffer);
+      processedVideoData = await processVideo(
+        tempVideoPath,
+        videoFile.originalname,
+        clientId,
+        'video-processing' // ID generico
+      );
     }
 
-    // --- SAVE ASSOCIATED VIDEO ---
-    let associatedVideoUrl: string | undefined;
-    let videoMimeType: string | undefined;
-    if (videoFile) {
-        const videoFilename = `${Date.now()}-${path.parse(videoFile.originalname).name}.mov`;
-        const videoKey = `uploads/videos/${videoFilename}`;
-        associatedVideoUrl = await saveFile(videoKey, videoFile.buffer, videoFile.mimetype);
-        videoMimeType = videoFile.mimetype;
-    }
-
-    // --- PROCESS AND SAVE IMAGE ---
-    const processed = await processImage(imageBuffer, imageFile.originalname);
-
-    // --- CLASSIFICATION ---
-    let imageCategory = 'OTHER';
-    try {
-      const classificationMetadata = {
-        width: processed.original.width,
-        height: processed.original.height,
-        filename: processed.original.filename,
-        momentId: context.momentId || undefined,
-        isCombined: false,
-        originalImages: undefined,
-        mimeType: finalMimeType,
-      };
-      const classificationResult = await classifyImageFromBuffer(imageBuffer, classificationMetadata);
-      imageCategory = classificationResult.category;
-    } catch (error: any) {
-      console.error(`Errore nella classificazione per ${imageFile.originalname}:`, error);
-      imageCategory = context.uploadType === UploadType.MOMENT ? 'MOMENT' : 'OTHER';
-    }
-
-    // --- DATABASE RECORD ---
-    const imageRecord = await prisma.image.create({
-      data: {
-        filename: processed.original.filename,
-        originalName: imageFile.originalname,
-        path: processed.original.path,
-        thumbnailPath: processed.thumbnails.medium?.path || '',
-        size: processed.original.size,
-        width: processed.original.width,
-        height: processed.original.height,
-        mimeType: imageFile.mimetype,
-        category: imageCategory,
-        hash: deduplicationResult.hash,
-        isFavorite: false,
-        memoryId: context.memoryId || undefined,
-        momentId: context.momentId || undefined,
-        associatedVideoPath: associatedVideoUrl,
-        associatedVideoType: videoMimeType,
+    // 2. Processo l'immagine. Questa funzione crea il record Image nel DB.
+    const processedImage = await processAndSaveImage(
+      {
+        fileBuffer: imageFile.buffer,
+        fileType: imageFile.mimetype,
+        originalFilename: imageFile.originalname,
+        clientId,
       },
-    });
+      context.userId
+    );
 
-    await sendProgress(clientId, {
-      type: 'upload_progress',
-      fileId,
-      filename: imageFile.originalname,
-      progress: 100,
-      status: 'completed',
-      message: 'Image upload complete.',
+    if (!processedImage.success || !processedImage.id) {
+      throw new Error(processedImage.reason || 'Image processing failed');
+    }
+
+    // 3. Ora che ho l'ID dell'immagine, se c'era un video, creo il record Video.
+    if (processedVideoData && processedImage.livePhotoContentId && processedVideoData.isLivePhoto) {
+      if (processedImage.livePhotoContentId !== processedVideoData.livePhotoContentId) {
+        console.warn(`Mismatched Live Photo Content IDs for ${imageFile.originalname}. Image: ${processedImage.livePhotoContentId}, Video: ${processedVideoData.livePhotoContentId}. Still linking them.`);
+      }
+      
+      const videoRecord = await prisma.video.create({
+        data: {
+          path: processedVideoData.original.path,
+          duration: processedVideoData.original.duration,
+          hlsPlaylist: processedVideoData.hls?.path,
+          thumbnailPath: processedVideoData.thumbnails['medium']?.path,
+          isSlowMotion: processedVideoData.isSlowMotion,
+          isTimeLapse: processedVideoData.isTimeLapse,
+          livePhotoContentId: processedVideoData.livePhotoContentId,
+          memoryId: context.memoryId,
+          imageId: processedImage.id,
+        } as any,
+      });
+    }
+
+    // 4. Aggiorno il record dell'immagine con i metadati di contesto
+    const finalImageRecord = await prisma.image.update({
+      where: { id: processedImage.id },
+      data: {
+        memoryId: context.memoryId,
+        momentId: context.momentId,
+      },
     });
 
     return {
       type: 'success',
-      id: imageRecord.id,
-      filename: imageRecord.filename,
-      originalName: imageRecord.originalName,
-      path: imageRecord.path,
-      thumbnailPath: imageRecord.thumbnailPath || '',
-      size: imageRecord.size,
-      width: imageRecord.width || 0,
-      height: imageRecord.height || 0,
-      processed,
+      id: finalImageRecord.id,
+      filename: finalImageRecord.filename,
+      originalName: finalImageRecord.originalName,
+      path: finalImageRecord.path,
+      thumbnailPath: finalImageRecord.thumbnailPath || '',
+      size: finalImageRecord.size,
+      width: finalImageRecord.width || 0,
+      height: finalImageRecord.height || 0,
+      processed: (processedImage as any).processedData,
     };
   } catch (error: any) {
-    console.error(`Errore critico nel processare ${imageFile.originalname}:`, error);
-    await sendProgress(clientId, {
-      type: 'upload_progress',
-      fileId,
-      filename: imageFile.originalname,
-      progress: 100,
-      status: 'failed',
-      message: 'Upload failed.',
-      details: error instanceof Error ? error.message : String(error),
-    });
+    console.error(`Error processing file group for ${imageFile.originalname}:`, error);
     return { type: 'error', originalName: imageFile.originalname, error: error.message };
+  } finally {
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   }
 } 

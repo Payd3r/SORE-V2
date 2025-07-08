@@ -3,6 +3,9 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { formatDateTime as formatDateTimeLoc } from '@/lib/localization';
+import LivePhotoViewer from '@/components/Media/LivePhotoViewer';
+import ShareMemoryModal from '@/components/Share/ShareMemoryModal';
+import { Share2 } from 'lucide-react';
 
 // Utility per combinare classi CSS
 const cn = (...classes: (string | undefined | false)[]): string => {
@@ -13,6 +16,8 @@ const cn = (...classes: (string | undefined | false)[]): string => {
 interface MomentData {
   id: string;
   combinedImageUrl: string;
+  livePhoto?: boolean;
+  videoUrl?: string;
   originalImages: {
     initiator: {
       url: string;
@@ -59,6 +64,7 @@ const MomentDetailView: React.FC<MomentDetailViewProps> = ({
 }) => {
   const [viewMode, setViewMode] = useState<'combined' | 'split' | 'comparison'>(initialViewMode);
   const [selectedImage, setSelectedImage] = useState<'initiator' | 'participant' | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   // Formattazione data
   const formatDateTime = (dateString: string) => {
@@ -68,13 +74,17 @@ const MomentDetailView: React.FC<MomentDetailViewProps> = ({
   // Rendering visualizzazione combinata
   const renderCombinedView = () => (
     <div className="relative w-full h-96 md:h-[500px] rounded-lg overflow-hidden">
-      <Image
-        src={moment.combinedImageUrl}
-        alt="Momento combinato"
-        fill
-        className="object-cover"
-        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 60vw"
-      />
+      {moment.livePhoto && moment.videoUrl ? (
+        <LivePhotoViewer imageUrl={moment.combinedImageUrl} videoUrl={moment.videoUrl} />
+      ) : (
+        <Image
+          src={moment.combinedImageUrl}
+          alt="Momento combinato"
+          fill
+          className="object-cover"
+          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 60vw"
+        />
+      )}
       
       {/* Watermark MOMENT */}
       <div className="absolute top-4 right-4">
@@ -205,15 +215,13 @@ const MomentDetailView: React.FC<MomentDetailViewProps> = ({
 
         {/* Pulsanti azione */}
         <div className="flex items-center space-x-2">
-          {onShare && (
+          {moment.memoryId && (
             <button
-              onClick={() => onShare(moment.id)}
+              onClick={() => setIsShareModalOpen(true)}
               className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-              title="Condividi momento"
+              title="Condividi ricordo"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-              </svg>
+              <Share2 className="w-5 h-5" />
             </button>
           )}
 
@@ -275,38 +283,28 @@ const MomentDetailView: React.FC<MomentDetailViewProps> = ({
         {viewMode === 'comparison' && renderComparisonView()}
       </div>
 
-      {/* Modal per immagine selezionata */}
+      {/* Visualizzatore immagine a schermo intero */}
       {selectedImage && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="relative max-w-4xl w-full">
-            <button
-              onClick={() => setSelectedImage(null)}
-              className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            
-            <div className="relative h-[80vh] rounded-lg overflow-hidden">
-              <Image
-                src={moment.originalImages[selectedImage].url}
-                alt={`Foto di ${moment.originalImages[selectedImage].userNickname}`}
-                fill
-                className="object-contain"
-              />
-            </div>
-            
-            <div className="mt-4 text-center text-white">
-              <div className="font-medium">
-                {moment.originalImages[selectedImage].userNickname}
-              </div>
-              <div className="text-sm opacity-80">
-                {formatDateTime(moment.originalImages[selectedImage].timestamp)}
-              </div>
-            </div>
-          </div>
+        <div 
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"
+          onClick={() => setSelectedImage(null)}
+        >
+          <Image
+            src={moment.originalImages[selectedImage].url}
+            alt={`Foto di ${moment.originalImages[selectedImage].userNickname}`}
+            width={1200}
+            height={1200}
+            className="max-w-full max-h-full object-contain"
+          />
         </div>
+      )}
+
+      {moment.memoryId && (
+        <ShareMemoryModal
+            memoryId={moment.memoryId}
+            isOpen={isShareModalOpen}
+            onClose={() => setIsShareModalOpen(false)}
+        />
       )}
     </div>
   );

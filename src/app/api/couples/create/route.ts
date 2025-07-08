@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { nanoid } from 'nanoid'
 
 // Schema di validazione per la creazione della coppia
 const createCoupleSchema = z.object({
@@ -61,83 +62,52 @@ function generateInviteCode(): string {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-export async function POST(request: NextRequest) {
+export async function POST(req: Request) {
+  const session = await getServerSession(authOptions)
+
+  if (!session?.user?.id) {
+    return new NextResponse('Unauthorized', { status: 401 })
+  }
+
+  if (session.user.coupleId) {
+    return new NextResponse('User is already in a couple', { status: 400 })
+  }
+
   try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Devi essere autenticato per creare una coppia' },
-        { status: 401 }
-      )
+    const body = await req.json()
+    const { name, anniversary } = body
+
+    if (!name) {
+      return new NextResponse('Couple name is required', { status: 400 })
     }
-
-    // Verifica che l'utente non sia già in una coppia
-    const existingUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      include: { couple: true }
-    })
-
-    if (existingUser?.couple) {
-      return NextResponse.json(
-        { error: 'Sei già parte di una coppia' },
-        { status: 400 }
-      )
-    }
-
-    const body = await request.json()
-    const validatedData = createCoupleSchema.parse(body)
 
     // Genera un codice di invito unico
-    let inviteCode: string
-    let codeExists = true
+    let inviteCode: string;
+    let codeExists = true;
     
     while (codeExists) {
-      inviteCode = generateInviteCode()
+      inviteCode = nanoid(8).toUpperCase();
       const existing = await prisma.couple.findUnique({
         where: { inviteCode }
-      })
-      codeExists = !!existing
+      });
+      codeExists = !!existing;
     }
 
-    // Crea la coppia
-    const couple = await prisma.couple.create({
+    const newCouple = await prisma.couple.create({
       data: {
-        name: validatedData.name,
+        name,
         inviteCode: inviteCode!,
-        anniversary: validatedData.anniversary ? new Date(validatedData.anniversary) : null,
+        anniversary: anniversary ? new Date(anniversary) : null,
+        users: {
+          connect: { id: session.user.id }
+        }
       }
     })
 
-    // Associa l'utente alla coppia
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: { coupleId: couple.id }
-    })
-
-    return NextResponse.json({
-      success: true,
-      couple: {
-        id: couple.id,
-        name: couple.name,
-        inviteCode: couple.inviteCode,
-        anniversary: couple.anniversary,
-      }
-    })
+    return NextResponse.json({ couple: newCouple })
 
   } catch (error) {
-    console.error('Errore nella creazione della coppia:', error)
-    
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dati non validi', details: error.errors },
-        { status: 400 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: 'Errore interno del server' },
-      { status: 500 }
-    )
+    console.error("Error creating couple:", error)
+    return new NextResponse('Internal Server Error', { status: 500 })
   }
 } 

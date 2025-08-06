@@ -160,6 +160,16 @@ services:
     profiles:
       - production-tools
 
+  media:
+    image: nginx:alpine
+    container_name: sore-media
+    volumes:
+      - ./public/uploads:/usr/share/nginx/html/uploads:ro
+      - ./public/videos:/usr/share/nginx/html/videos:ro
+      - ./docker/nginx/media.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8090:80"
+
 volumes:
   postgres_data:
     driver: local

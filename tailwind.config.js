@@ -62,7 +62,11 @@ module.exports = {
   				'3': 'hsl(var(--chart-3))',
   				'4': 'hsl(var(--chart-4))',
   				'5': 'hsl(var(--chart-5))'
-  			}
+  			},
+        'background-light': '#f8fafc', // chiaro, tipico Tailwind
+        'background-dark': '#18181b',  // scuro, tipico Tailwind
+        'text-light': '#18181b',       // testo scuro su sfondo chiaro
+        'text-dark': '#f8fafc',        // testo chiaro su sfondo scuro
   		},
   		fontFamily: {
   			sans: [

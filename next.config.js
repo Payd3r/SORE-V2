@@ -1,9 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone', // Required for Docker containerization
-  experimental: {
-    appDir: true,
-  },
   images: {
     domains: ['localhost'],
     formats: ['image/webp', 'image/avif'],

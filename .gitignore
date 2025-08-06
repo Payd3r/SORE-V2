@@ -65,3 +65,5 @@ coverage/
 
 # Storybook
 *storybook.log
+docker-compose.dev.yml
+docker-compose.prod.yml
